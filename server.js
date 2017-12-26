@@ -1,3 +1,6 @@
+// Copyright (C) 2017, adaptiveflow
+// Distributed under ISC License
+
 'use strict'
 
 exports.iterate = function(api) {
@@ -6,35 +9,53 @@ exports.iterate = function(api) {
 	}
 }
 
-function invokeAPI(api,basepath,request,response) {
+// ctx : { i(in out), part(out) }
+function
+match( api, url, ctx ) {
+	var start = ctx.i;
+	var i = url.indexOf( "/", start + 1 );
+	ctx.i = i;
+	return api[ ctx.part = url.substring
+		( start, i > 0 ? i : undefined ) ];
+}
+
+function
+invoke(api,basepath,request,response) {
 	// match API
 	var url = request.url;
-	var i = 0;
+	var ctx = { i : 0 };
 	var a;
 	var ev = {}
 	for (;;) {
-		var start = i;
-		i = url.indexOf( "/", start + 1 );
-		var part = i > 0 ? url.substring( start, i ) : url.substring( start );
-		a = api[part];
+		a = match ( api,url, ctx );
 		if ( a === undefined ) { // path parameter
-			for ( var prop in api ) {
-				if ( prop.charAt(1) == '{' ) {
-					a = api[prop];
-					// automatically transfer path parameter without mapping
-					ev[prop.substring( 2, prop.length - 1  )] =
-						part.substring( 1 );
+			a = api["?"]; // get alias of path parameter
+			if ( a === null ) {
+				a = undefined;
+				break;
+			} else if ( a === undefined ) {
+				for ( var prop in api ) {
+					if ( prop.charAt(1) == '{' ) {
+						a = api[prop];
+						// automatically transfer path parameter without mapping template
+						ev[prop.substring( 2, prop.length - 1  )] =
+							ctx.part.substring( 1 );
+						api["?"] = a; // add alias to avoid loop next time
+						break;
+					}
+				}
+				if ( a === undefined ) {
+					api["?"] = null;
 					break;
 				}
 			}
-			if ( a === undefined ) break;
 		}
-		if ( i < 0 ) break;
+		if ( ctx.i < 0 ) break;
 		api = a;
-	};
+	}
 	if ( a !== undefined ) {
 		var m = a[request.method];
-		if ( m != undefined ) {
+		if ( m !== undefined ) {
 			try {
 				var l = require( basepath ? basepath + "/" + m.lambda : m.lambda  );
 				var str = '';
@@ -73,22 +94,46 @@ function invokeAPI(api,basepath,request,response) {
 		console.log( "Unknown API " + request.url );
 	}
 }
+exports.match = match;
+exports.invoke = invoke;
 
-exports.invoke = invokeAPI;
 exports.run = function(api,basepath,module) {
+
 	function dispatch( request, response ) {
-//		response.writeHead(200, {'Content-Type' : 'text/plain'} );
-//		response.write('Undefined API');
-//		response.end();
-		invokeAPI( api, basepath, request, response );
+		invoke( api, basepath, request, response );
 	}
 
 	const http = require( "http" );
 
-
+	var listener = dispatch;
+/*
 var express = require( 'express' );
 const app = express();
 app.all('*', dispatch );
-	// XXX testing now
-	http.createServer( app ).listen( 3000 );
+listener = app;
+*/	// XXX testing now
+	http.createServer( listener ).listen( 3000 );
 }
+
+// return 0 if no problem
+// -1 if module not found
+// undefined if no api body
+exports.main = function(name,run) {
+	const cwd = process.cwd()
+	const file = cwd + "/" + name;
+	try {
+		var api = require( file );
+		if ( require("path").extname( require.resolve( file ) ) == ".js" ) {
+			api = api.body;
+			if ( api === undefined ) return undefined;
+		}
+		( run == undefined ? this.run : run )( api, cwd, null );
+		return 0;
+	} catch ( e ) {
+		if ( e.code === "MODULE_NOT_FOUND" ) return -1;
+		require( file ); // raise exception again to know datails
+	}
+}
+
+if ( this.main( "api" ) === undefined )
+	console.log( "No body in api.js" );
