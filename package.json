@@ -1,0 +1,23 @@
+{
+  "name": "canis",
+  "version": "0.0.2",
+  "description": "Node.js based RESTful web service for Orion project",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orionids/canis.git"
+  },
+  "keywords": [
+    "RESTful"
+  ],
+  "author": "adaptiveflow",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/orionids/canis/issues"
+  },
+  "homepage": "https://github.com/orionids/canis#readme"
+}

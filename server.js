@@ -26,6 +26,21 @@ invoke(api,basepath,request,response) {
 	var ctx = { i : 0 };
 	var a;
 	var ev = {}
+
+	var global = api.global;
+	if ( global !== undefined ) {
+		if ( global.stage !== undefined ) {
+			// ignore preceding path separator to find stage
+			// TODO: need to check the first char is '/' ?
+			ctx.i = 1;
+			if ( match ( global.stage, url, ctx ) === undefined ) {
+				console.log( "Unknown stage " + ctx.part );
+				return;
+			}
+			ev.stage = ctx.part;
+		}
+	}
+
 	for (;;) {
 		a = match ( api,url, ctx );
 		if ( a === undefined ) { // path parameter
@@ -98,21 +113,34 @@ exports.match = match;
 exports.invoke = invoke;
 
 exports.run = function(api,basepath,module) {
+	if ( api ) {
+		function dispatch( request, response ) {
+			invoke( api, basepath, request, response );
+		}
 
-	function dispatch( request, response ) {
-		invoke( api, basepath, request, response );
+		const http = require( "http" );
+
+		var listener = dispatch;
+	/*
+	var express = require( 'express' );
+	const app = express();
+	app.all('*', dispatch );
+	listener = app;
+	*/	// XXX testing now
+		http.createServer( listener ).listen( 3000 );
 	}
+}
 
-	const http = require( "http" );
-
-	var listener = dispatch;
-/*
-var express = require( 'express' );
-const app = express();
-app.all('*', dispatch );
-listener = app;
-*/	// XXX testing now
-	http.createServer( listener ).listen( 3000 );
+// __dirname + "/" + relpath to use relative path
+// like 'require' in an arbitrary module
+const path = require( "path" );
+exports.load = function( file ) {
+	var module = require( file );
+	if ( path.extname( require.resolve( file ) ) == ".js" ) {
+		module = module.body;
+		if ( module === undefined ) return undefined;
+	}
+	return module;
 }
 
 // return 0 if no problem
@@ -121,18 +149,17 @@ listener = app;
 exports.main = function(name,run) {
 	const cwd = process.cwd()
 	const file = cwd + "/" + name;
+	if ( run == undefined ) run = this.run;
 	try {
-		var api = require( file );
-		if ( require("path").extname( require.resolve( file ) ) == ".js" ) {
-			api = api.body;
-			if ( api === undefined ) return undefined;
-		}
-		( run == undefined ? this.run : run )( api, cwd, null );
+		var api = this.load( file );
+		if ( api === undefined ) return undefined;
+		run( api, cwd, null );
 		return 0;
 	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" ) return -1;
-		require( file ); // raise exception again to know datails
+		if ( e.code === "MODULE_NOT_FOUND" ) run( null, cwd, null );
+		else require( file ); // raise exception again to know datails
 	}
+	return 0;
 }
 
 if ( this.main( "api" ) === undefined )
