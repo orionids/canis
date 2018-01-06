@@ -10,6 +10,11 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS.
 - Supports popular web app frameworks like Express.
 
+## New features in 0.1.0
+- Functions needed to generate AWS APIs and methods automatically according to api.json
+- Stage support in api.json
+
+
 ## Usage
 You should create a file api.json or api.js in current working direcrory and run
 `node canis_path/server.js`
@@ -26,7 +31,7 @@ exports.body = {
 		"stage" : {
 			"test1" : "A test stage"
 		},
-		"apiKey" : "yes",
+		"apiKey" : true,
 		"lambdaPrefix" : "",
 		// optional aws specific parameters
 		"aws-gatewayRegion" : "ca-central-1",
