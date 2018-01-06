@@ -3,10 +3,34 @@
 
 'use strict'
 
-exports.iterate = function(api) {
-	for ( var p in api ) {
-		console.log( p );
+exports.resolve = function( s, symbol ) {
+	var i = 0;
+	if ( s === undefined ) return "";
+	while (  ( i = s.indexOf( "{", i ) ) >= 0 ) {
+		var next = i + 1;
+		if ( s.charAt(next) == '{' ) {
+			s = s.substring( 0, i ) + s.substring( next );
+			i = next;
+		} else {
+			var end = s.indexOf( "}", next );
+			var sym = s.substring( next, end );
+			var resolved;
+			if ( Array.isArray(symbol) ) {
+				for ( var l = 0; l < symbol.length; l++ ) {
+					var r = symbol[l][sym];
+					if ( r !== undefined ) {
+						resolved = r;
+						break;
+					}
+				}
+			} else {
+				resolved = symbol[sym];
+			}
+			if ( resolved === undefined ) return null;
+			s = s.substring( 0, i ) + resolved + s.substring( end + 1 );
+		}
 	}
+	return s;
 }
 
 // ctx : { i(in out), part(out) }
@@ -27,13 +51,13 @@ invoke(api,basepath,request,response) {
 	var a;
 	var ev = {}
 
-	var global = api.global;
-	if ( global !== undefined ) {
-		if ( global.stage !== undefined ) {
+	var config = api.configuration;
+	if ( config !== undefined ) {
+		if ( config.stage !== undefined ) {
 			// ignore preceding path separator to find stage
 			// TODO: need to check the first char is '/' ?
 			ctx.i = 1;
-			if ( match ( global.stage, url, ctx ) === undefined ) {
+			if ( match ( config.stage, url, ctx ) === undefined ) {
 				console.log( "Unknown stage " + ctx.part );
 				return;
 			}

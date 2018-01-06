@@ -4,17 +4,16 @@
 'use strict'
 
 module.exports = class {
-	constructor( complete ) {
+	constructor( progress ) {
 		this.stack = [];
 		this.index = -1;
-		this.CONTINUE = 0;
-		this.PENDING = 1;
-		this.BREAK = -1;
-		this.RETURN = -2;
-		this.complete = complete;
+		// iterator only sends two cases for progress,
+		// one is multi-level iteration was fully completed ( state == undefined )
+		// another is multi-level loop is terminated by RETURN ( state == RETURN )
+		this.progress = progress;
 	}
 
-	add( n, c, cb ) {
+	add( n, c, cb, pop ) {
 		var l = this.stack.length;
 		var t = ++this.index;
 		if ( t >= l ) this.stack.push( {} );
@@ -22,27 +21,35 @@ module.exports = class {
 			"context" : c,
 			"index" : 0,
 			"total" : n,
-			"callback" : cb
+			"callback" : cb,
+			"pop" : pop
 		};
 	}
 
 	run() {
 		while ( this.index >= 0 ) {
+			var e = this.stack[this.index];
 			for (;;) {
-				var e = this.stack[this.index];
 				var i = e.index;
 				if ( i >= e.total ) break;
 				e.index = i + 1;
 				var result = e.callback( this, e.context, i );
-				if ( result == this.PENDING ) return;
-				if ( result == this.BREAK ) break;
-				if ( result == this.RETURN ) {
-					this.complete( this, this.RETURN );
+				if ( result == module.exports.PENDING ) return;
+				if ( result == module.exports.BREAK ) break;
+				if ( result == module.exports.RETURN ) {
+					this.progress( this, module.exports.RETURN );
 					return;
 				}
 			}
 			this.index --;
+			if( e.pop !== undefined ) e.pop( this, e.context );
 		}
-		this.complete( this, 0 );
+		this.progress( this );
 	}
 };
+
+
+module.exports.CONTINUE = 0;
+module.exports.PENDING = 1;
+module.exports.BREAK = -1;
+module.exports.RETURN = -2;

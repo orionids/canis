@@ -15,10 +15,17 @@ You should create a file api.json or api.js in current working direcrory and run
 `node canis_path/server.js`
 ( Current implementation temporarily listens port 3000 for test )
 
-An example of api.js which necessarily exports body is below :
+An example of api.js which necessarily exports body is below.
+If there is stage property in global configuration, API URL will be
+`base_url/stage_name/path` and the current stage will be automatically passed to
+the context of lambda handler - for AWS API auto-generation feature in Canis,
+header mapping contains similar code to do that :
 ```
 exports.body = {
-	"global" : {
+	"configuration" : {
+		"stage" : {
+			"test1" : "A test stage"
+		},
 		"apiKey" : "yes",
 		"lambdaPrefix" : "",
 		// optional aws specific parameters
