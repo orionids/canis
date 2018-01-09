@@ -29,9 +29,12 @@ header mapping contains similar code to do that :
 exports.body = {
 	"configuration" : {
 		"stage" : {
-			"test1" : "A test stage"
+			"test1" : {
+				"comment" : "A test stage",
+				"apiKey" : "abcd"
+			}
 		},
-		"apiKey" : true,
+		"apiKeyRequired" : true,
 		"lambdaPrefix" : "",
 		// optional aws specific parameters
 		"aws-gatewayRegion" : "ca-central-1",
