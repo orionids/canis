@@ -6,14 +6,20 @@ application framework which supports various forms of application
 including web app.
 
 So Canis is a part of Orion project and will support :
-- RESTful web service framework, compatible to AWS API gateway.
-- API definition using JSON and automatic API hirarchy generation for AWS.
-- Supports popular web app frameworks like Express.
+- RESTful web service framework, compatible to AWS API gateway. ( initial implementation is done )
+- API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
+- Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0
+## New features in 0.1.0 to 0.1.1
 - Functions needed to generate AWS APIs and methods automatically according to api.json
 - Stage support in api.json
+- API key support
 
+## Known todo list
+- Full exception handling for AWS API generation
+- AWS_PROXY support for AWS API generation
+- Static files
+- User account support using popular frameworks
 
 ## Usage
 You should create a file api.json or api.js in current working direcrory and run
@@ -64,4 +70,46 @@ exports.body = {
 		}
 	}
 };
+```
+
+
+## An example to generate AWS API automatically
+```
+const server = require( "canis/server" );
+const awsapi = require( "canis/awsapi" );
+
+// myapi.js ( with exported body )  or myapi.json must be present in cwd
+server.main( "myapi", function( api, cwd ) {
+	if ( api ) {
+		awsapi.createAPI( api,
+			"my-api-set-{stage}", // rest api name with symbol 'stage'
+			[process.env], // array of key-value pairs to resolve symbol defined by {symbol}
+			null, // subset path : if path is not null but subset json is null,
+			      // try to match path using given parameter 'api' ( first param )
+			null, // subset json
+			function( iter, code, data ) { // progress callback
+				switch ( code ) {
+					case undefined:
+					console.log( "Done." );
+					break;
+					case -1: // an error
+					console.log( data );
+					break;
+					case awsapi.PATH:
+					console.log( iter.path + data );
+					break;
+					case awsapi.METHOD:
+					console.log( data );
+					break;
+					case awsapi.EXISTING_METHOD:
+					data = iter.path + "/" + data;
+					case awsapi.EXISTING_PATH:
+					console.log( data + " : present" );
+					break;
+				}
+			} );
+	} else {
+		console.log( "No API definition." );
+	}
+} );
 ```
