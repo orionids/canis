@@ -8,6 +8,8 @@ var server = require( "./server" );
 
 exports.PATH = 0;
 exports.METHOD = 1;
+exports.EXISTING_PATH = 2;
+exports.EXISTING_METHOD = 3;
 
 function recoverConfig(aws) {
 	if ( aws ) {
@@ -106,6 +108,11 @@ createMethod( iter, method, info, res, callback ) {
 			var account = iter.config["aws-account"]; // XXX undefined?
 
 			function putopt() {
+				var param = "";
+				for ( var i = 0; i < iter.param.length; i++ ) {
+					var p = iter.param[i];
+					param += "\"" + p + "\" : \"$input.params('" + p + "')\", "
+				}
 				apigw.putIntegration( {
 					httpMethod: method,
 					restApiId: iter.restapi.id,
@@ -121,7 +128,7 @@ createMethod( iter, method, info, res, callback ) {
 					credentials: "arn:aws:iam::" + account + ":role/" + role,
 					passthroughBehavior: "WHEN_NO_TEMPLATES",
 					requestTemplates : {
-						"application/json" : "{\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end }, \"stage\": \"$context.stage\" }"
+						"application/json" : "{" + param + "\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end }, \"stage\": \"$context.stage\", \"path\": \"$context.resourcePath\" }"
 					}
 				}, function ( err, data ) {
 					if ( err == null ) {
@@ -167,35 +174,55 @@ createMethod( iter, method, info, res, callback ) {
 				putopt();
 			}
 		} else {
-//XXX
+			callback( err );
 		}
 	} );
 }
 
+function pushParam( iter, s ) {
+	var t = ++iter.paramIndex;
+	s = s.substring(2, s.length - 1);
+	if ( t >= iter.param.length ) iter.param.push( s );
+	else iter.param[t] = s;
+}
 
 function
 iterateResource( iter, c, i ) {
 	function callback( err, data ) {
+		var id;
+		var k = c.key[i];
 		if ( err ) {
-			console.log( err );
-		} else {
-			var k = c.key[i];
-			var apiset = c.apiset[k];
-			var key = Object.keys(apiset);
-			if ( key ) {
-				iter.path += k;
-				iter.progress( iter, exports.PATH );
-				iter.add( key.length, {
-					apiset: apiset,
-					key: key,
-					root: data.id,
-				}, iterateResource, function (iter, c) {
-					var path = iter.path;
-					iter.path = path.substring(0,path.lastIndexOf("/"));
-				} );
+			if ( err.code != 'ConflictException' ) {
+				console.log( err ); // XXX
+				iter.end();
+				return;
 			}
-			iter.run();
+			var path = iter.path + k;
+			id = iter.resource[path];
+			iter.progress( iter, exports.EXISTING_PATH, path );
+/*iter.run();
+return;*/
+		} else {
+			id = data.id;
 		}
+		if ( k.charAt( 1 ) == '{' ) pushParam( iter, k );
+		iter.progress( iter, exports.PATH, k );
+		var apiset = c.apiset[k];
+		var key = Object.keys(apiset);
+		if ( key ) {
+			iter.path += k;
+			iter.add( key.length, {
+				apiset: apiset,
+				key: key,
+				root: id,
+			}, iterateResource, function (iter, c) {
+				var path = iter.path;
+				if ( path.charAt( path.length - 1 ) == '}' )
+					iter.param[iter.paramIndex--] = undefined;
+				iter.path = path.substring(0,path.lastIndexOf("/"));
+			} );
+		}
+		iter.run();
 	}
 	var k = c.key[i];
 	if ( k.length > 0 ) {
@@ -211,10 +238,15 @@ iterateResource( iter, c, i ) {
 			createMethod( iter, k, c.apiset[k], c.root,
 				function( err, data ) {
 					if ( err ) {
-						console.log( err );
-					} else {
-						iter.run();
+						if ( err.code == 'ConflictException' ) {
+							iter.progress( iter,
+								exports.EXISTING_METHOD, k );
+						} else {
+							console.log( err );
+							return;
+						}
 					}
+					iter.run();
 				} );
 			return iterator.PENDING;
 		}
@@ -230,11 +262,20 @@ exports.createAPI = function
 			console.log( err );
 			return;
 		}
-		apigw.getResources( { restApiId: restapi.id }, function (err,data) {
+		// 500 is maximum of current aws-sdk implementation
+		apigw.getResources( { restApiId: restapi.id, limit: 500 }, function (err,data) {
 			if ( err ) {
 				progress( null, -1, err );
 			} else {
 				var root = null;
+				var iter = new iterator( progress );
+				iter.param = [];
+				iter.paramIndex = -1;
+				iter.resource = {};
+				for ( var i = 0; i < data.items.length; i++ ) {
+					iter.resource[data.items[i].path] =
+						data.items[i].id;
+				}
 				if ( path ) {
 					if ( subset == null ) {
 						// if subset was not supplied
@@ -243,20 +284,15 @@ exports.createAPI = function
 						var a = api;
 						for (;;) {
 							subset = server.match( a, path, ctx );
-							if ( subset == undefined ) break;
+							if ( subset == undefined );// break;
 							if ( ctx.i < 0 ) break;
 							a = subset;
 						}
 					}
-
 					var p = path;
 					for (;;) {
-						var r = data.items.find
-							( (o) => { return o.path == p; } );
-						if ( r != null ) {
-							root = r.id;
-							break;
-						}
+						root = iter.resource[p];
+						if ( root !== undefined ) break;
 						var i = p.lastIndexOf( "/" );
 						if ( i < 0 ) break;
 							var a = {};
@@ -264,21 +300,29 @@ exports.createAPI = function
 						subset = a;
 						p = p.substring( 0, i );
 					}
+					var ctx = { i : 0 };
+					for (;;) {
+						server.match( null, p, ctx );
+						if ( ctx.part.charAt(1) == '{' )
+							pushParam( iter, ctx.part );
+						if ( ctx.i < 0 ) break;
+					}
 				} else {
 					subset = api;
+					p = "";
 				}
-				if ( root == null ) {
-					var r = data.items.find
-						( (o) => { return o.path.charAt(0) == '/' &&
-						o.path.indexOf( "/", 1 ) < 0; } );
-					root =  r.path == "/" ? r.id : r.parentId;
+				if ( root === undefined ) {
+//					var r = data.items.find
+//						( (o) => { return o.path.charAt(0) == '/' &&
+//						o.path.indexOf( "/", 1 ) < 0; } );
+//					root =  r.path == "/" ? r.id : r.parentId;
+					root = iter.resource["/"];
 				}
 
-				var iter = new iterator( progress );
 				iter.restapi = restapi;
 				iter.config = api.configuration;
 				iter.symbol = symbol;
-				iter.path = "";
+				iter.path = p;
 				iterateResource( iter, {
 					apiset: { "": subset },
 					key: [""],
