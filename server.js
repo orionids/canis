@@ -39,30 +39,35 @@ match( api, url, ctx ) {
 	var start = ctx.i;
 	var i = url.indexOf( "/", start + 1 );
 	ctx.i = i;
-	return api[ ctx.part = url.substring
-		( start, i > 0 ? i : undefined ) ];
+	ctx.part = url.substring
+		( start, i > 0 ? i : undefined );
+	// include api == null or api === undefined
+	if ( api == undefined ) return null;
+	return api[ctx.part];
 }
 
 function
 invoke(api,basepath,request,response) {
 	// match API
-	var url = request.url;
+	const url = request.url;
 	var ctx = { i : 0 };
 	var a;
 	var ev = {}
 
 	var config = api.configuration;
-	if ( config !== undefined ) {
-		if ( config.stage !== undefined ) {
-			// ignore preceding path separator to find stage
-			// TODO: need to check the first char is '/' ?
-			ctx.i = 1;
-			if ( match ( config.stage, url, ctx ) === undefined ) {
-				console.log( "Unknown stage " + ctx.part );
-				return;
-			}
-			ev.stage = ctx.part;
+	var apikey;
+	if ( config !== undefined && config.stage !== undefined ) {
+		// ignore preceding path separator to find stage
+		// TODO: need to check the first char is '/' ?
+		ctx.i = 1;
+		var stage = match ( config.stage, url, ctx );
+		if ( stage === undefined ) {
+			console.log( "Unknown stage " + ctx.part );
+			return;
 		}
+		apikey = stage.apiKey;
+		ev.path = url.substring( ctx.i );
+		ev.stage = ctx.part;
 	}
 
 	for (;;) {
@@ -95,6 +100,17 @@ invoke(api,basepath,request,response) {
 	if ( a !== undefined ) {
 		var m = a[request.method];
 		if ( m !== undefined ) {
+			if ( m.apiKeyRequired == true ||
+			  ( m.apiKeyRequired != false && config.apiKeyRequired == true ) ) {
+				if ( apikey === undefined )
+					apikey = config.apiKey;
+				if ( apikey !== undefined ) {
+					if ( request.headers['x-api-key'] != apikey ) {
+						console.log( "API key mismatch" );
+						return;
+					}
+				}
+			}
 			try {
 				var l = require( basepath ? basepath + "/" + m.lambda : m.lambda  );
 				var str = '';
