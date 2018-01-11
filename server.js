@@ -3,6 +3,17 @@
 
 'use strict'
 
+exports.symbol = function ( s, symbol ) {
+	if ( Array.isArray(symbol) ) {
+		for ( var l = 0; l < symbol.length; l++ ) {
+			var sym = symbol[l][s];
+			if ( sym !== undefined ) return sym;
+		}
+		return undefined;
+	}
+	return symbol[s];
+}
+
 exports.resolve = function( s, symbol ) {
 	var i = 0;
 	if ( s === undefined ) return "";
@@ -14,23 +25,35 @@ exports.resolve = function( s, symbol ) {
 		} else {
 			var end = s.indexOf( "}", next );
 			var sym = s.substring( next, end );
-			var resolved;
-			if ( Array.isArray(symbol) ) {
-				for ( var l = 0; l < symbol.length; l++ ) {
-					var r = symbol[l][sym];
-					if ( r !== undefined ) {
-						resolved = r;
-						break;
-					}
-				}
-			} else {
-				resolved = symbol[sym];
-			}
+			var resolved = this.symbol( sym, symbol );
 			if ( resolved === undefined ) return null;
 			s = s.substring( 0, i ) + resolved + s.substring( end + 1 );
 		}
 	}
 	return s;
+}
+
+exports.stage = function ( config, url, ctx ) {
+	var stage;
+	for (;;) {
+		if ( config.stage !== undefined ) {
+			// ignore preceding path separator to find stage
+			// TODO: need to check the first char is '/' ?
+			ctx.i = 1;
+			stage = match ( config.stage, url, ctx );
+			if ( stage !== undefined ) {
+				var apikey = stage.apiKey;
+				if ( apikey !== undefined ) ctx.apiKey = apikey;
+				break;
+			}
+		} else {
+			ctx.i = 0;
+			stage = null;
+		}
+		ctx.apiKey = config.apiKey;
+		break;
+	}
+	return stage;
 }
 
 // ctx : { i(in out), part(out) }
@@ -50,25 +73,18 @@ function
 invoke(api,basepath,request,response) {
 	// match API
 	const url = request.url;
-	var ctx = { i : 0 };
+	var ctx = {};
 	var a;
 	var ev = {}
 
 	var config = api.configuration;
-	var apikey;
-	if ( config !== undefined && config.stage !== undefined ) {
-		// ignore preceding path separator to find stage
-		// TODO: need to check the first char is '/' ?
-		ctx.i = 1;
-		var stage = match ( config.stage, url, ctx );
-		if ( stage === undefined ) {
-			console.log( "Unknown stage " + ctx.part );
-			return;
-		}
-		apikey = stage.apiKey;
-		ev.path = url.substring( ctx.i );
-		ev.stage = ctx.part;
+	if ( config === undefined ) config = {};
+	if ( this.stage( config, url, ctx ) === undefined ) {
+		console.log( "Unknown stage " + ctx.part ); // XXX
+		return;
 	}
+	ev.path = url.substring( ctx.i );
+	ev.stage = ctx.part;
 
 	for (;;) {
 		a = match ( api,url, ctx );
@@ -102,10 +118,8 @@ invoke(api,basepath,request,response) {
 		if ( m !== undefined ) {
 			if ( m.apiKeyRequired == true ||
 			  ( m.apiKeyRequired != false && config.apiKeyRequired == true ) ) {
-				if ( apikey === undefined )
-					apikey = config.apiKey;
-				if ( apikey !== undefined ) {
-					if ( request.headers['x-api-key'] != apikey ) {
+				if ( ctx.apiKey !== undefined ) {
+					if ( request.headers['x-api-key'] != ctx.apiKey ) {
 						console.log( "API key mismatch" );
 						return;
 					}
