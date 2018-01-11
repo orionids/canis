@@ -1,6 +1,6 @@
 {
   "name": "canis",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Node.js based RESTful web service for Orion project",
   "main": "server.js",
   "scripts": {

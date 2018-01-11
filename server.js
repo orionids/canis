@@ -17,13 +17,13 @@ exports.symbol = function ( s, symbol ) {
 exports.resolve = function( s, symbol ) {
 	var i = 0;
 	if ( s === undefined ) return "";
-	while (  ( i = s.indexOf( "{", i ) ) >= 0 ) {
+	while (  ( i = s.indexOf( "[", i ) ) >= 0 ) {
 		var next = i + 1;
-		if ( s.charAt(next) == '{' ) {
+		if ( s.charAt(next) == '[' ) {
 			s = s.substring( 0, i ) + s.substring( next );
 			i = next;
 		} else {
-			var end = s.indexOf( "}", next );
+			var end = s.indexOf( "]", next );
 			var sym = s.substring( next, end );
 			var resolved = this.symbol( sym, symbol );
 			if ( resolved === undefined ) return null;
