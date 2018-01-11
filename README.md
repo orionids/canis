@@ -84,12 +84,7 @@ const awsapi = require( "canis/awsapi" );
 // myapi.js ( with exported body )  or myapi.json must be present in cwd
 server.main( "myapi", function( api, cwd ) {
 	if ( api ) {
-		awsapi.createAPI( api,
-			"my-api-set-{stage}", // rest api name with symbol 'stage'
-			[process.env], // array of key-value pairs to resolve symbol defined by {symbol}
-			null, // subset path : if path is not null but subset json is null,
-			      // try to match path using given parameter 'api' ( first param )
-			null, // subset json
+		var iter = new awsapi.iterator(
 			function( iter, code, data ) { // progress callback
 				switch ( code ) {
 					case undefined:
@@ -110,7 +105,14 @@ server.main( "myapi", function( api, cwd ) {
 					console.log( data + " : present" );
 					break;
 				}
-			} );
+			}
+		);
+		awsapi.createAPI( api, iter,
+			"my-api-set-{stage}", // rest api name with symbol 'stage'
+			[process.env], // array of key-value pairs to resolve symbol defined by {symbol}
+			null, // subset path : if path is not null but subset json is null,
+			      // try to match path using given parameter 'api' ( first param )
+			null, // subset json );
 	} else {
 		console.log( "No API definition." );
 	}
