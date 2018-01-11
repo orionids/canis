@@ -25,6 +25,8 @@ exports.help = function ( longOption, charOption ) {
 }
 
 // this function corresponds to stroptString in Coral library, but
+// no case to get partial string of the current arg because
+// that is passed to parameter of an option dispacher
 exports.next = function ( optionContext ) {
 	return optionContext.invoke( optionContext, 'next' );
 }
