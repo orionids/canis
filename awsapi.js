@@ -2,7 +2,7 @@
 // Distributed under ISC License
 
 'use strict'
-const  iterator = require( "./iterator" );
+exports.iterator = require( "./iterator" );
 
 var server = require( "./server" );
 
@@ -32,6 +32,36 @@ exports.AWS = aws;
 
 const apigw = new aws.APIGateway();
 
+function
+callAWSAPI( iter, instance, name, param, callback ) {
+	// refer to below document : now just use constant 100msec delay for each API call
+	// https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html
+	var timeout = 100;
+	iter.prevCall = {
+		instance : instance,
+		name : name,
+		param : param,
+		callback : callback,
+		timeout : timeout
+	};
+	setTimeout( function() {
+		instance[name]( param, callback );
+	}, timeout );
+}
+
+function
+retryAWSAPI( iter, err ) {
+	if ( err.code == 'TooManyRequestsException' ) {
+		console.log( "- Retry by TooManyRequestsException" );
+		const prevCall = iter.prevCall;
+		setTimeout( function() {
+			prevCall.instance[prevCall.name]( prevCall.param, prevCall.callback );
+		}, prevCall.timeout );
+		return true;
+	}
+}
+
+
 function CanisError( code, message ) {
 	this.code = code;
 	this.message = message;
@@ -39,9 +69,9 @@ function CanisError( code, message ) {
 
 CanisError.prototype = new Error();
 CanisError.prototype.constructor = CanisError;
-exports.getAPISet = function( name, symbol, f ) {
+exports.getAPISet = function( iter, name, symbol, f ) {
 	var resolved = server.resolve( name, symbol );
-	apigw.getRestApis( null, function ( err, data ) {
+	callAWSAPI( iter, apigw, "getRestApis", null, function ( err, data ) {
 		if ( err == null ) {
 			var found = data.items.find( (i) => { return i.name == resolved } );
 			if ( found ) {
@@ -50,6 +80,7 @@ exports.getAPISet = function( name, symbol, f ) {
 				f ( new CanisError( "NotFoundException", "REST API not found" ) );
 			}
 		} else {
+			if ( retryAWSAPI( iter, err ) ) return;
 			f( err );
 		}
 	} );
@@ -57,17 +88,23 @@ exports.getAPISet = function( name, symbol, f ) {
 }
 
 
-exports.removeAPISet = function( name, symbol, f ) {
+exports.removeAPISet = function( iter, name, symbol, f ) {
+	function callback( err, data ) {
+		if ( err && retryAWSAPI( iter, err ) ) return;
+		f( err, data );
+	}
 	if ( typeof name === 'string' ) {
-		this.getAPISet( name, symbol, function( err, data ) {
+		this.getAPISet( iter, name, symbol, function( err, data ) {
 			if ( err ) {
 				f ( err );
 			} else {
-				apigw.deleteRestApi( { restApiId: data.id }, f );
+				callAWSAPI( iter, apigw, "deleteRestApi",
+					{ restApiId: data.id }, callback );
 			}
 		} );
 	} else {
-		apigw.deleteRestApi( { restApiId: name.id }, f );
+		callAWSAPI( iter, apigw, "deleteRestApi",
+			{ restApiId: name.id }, callback );
 	}
 }
 
@@ -75,7 +112,7 @@ exports.removeAPISet = function( name, symbol, f ) {
 function
 createMethod( iter, method, info, res, callback ) {
 	var apikey = info["apiKey"];
-	apigw.putMethod( {
+	callAWSAPI( iter, apigw, "putMethod", {
 		authorizationType: "NONE", // XXX
 		apiKeyRequired : apikey === undefined ?
 			iter.config["apiKey"] : apikey,
@@ -113,7 +150,7 @@ createMethod( iter, method, info, res, callback ) {
 					var p = iter.param[i];
 					param += "\"" + p + "\" : \"$input.params('" + p + "')\", "
 				}
-				apigw.putIntegration( {
+				callAWSAPI( iter, apigw, "putIntegration", {
 					httpMethod: method,
 					restApiId: iter.restapi.id,
 					resourceId: res,
@@ -132,39 +169,48 @@ createMethod( iter, method, info, res, callback ) {
 					}
 				}, function ( err, data ) {
 					if ( err == null ) {
-						apigw.putIntegrationResponse( {
+						callAWSAPI( iter, apigw, "putIntegrationResponse", {
 							httpMethod: method,
 							restApiId: iter.restapi.id,
 							resourceId: res,
 							statusCode: "200"
 						}, function ( err, data ) {
-							apigw.putMethodResponse( {
-								httpMethod: method,
-								restApiId: iter.restapi.id,
-								resourceId: res,
-								statusCode: "200",
-								responseModels: {
-									"application/json" : "Empty"
-								}
-							}, function ( err, data ) {
-								if ( err ) {
-									iter.progress( iter, -1, err );
-								} else {
-									iter.progress( iter, exports.METHOD, method ); 
-									callback( err, data );
-								}
-							} );
+							if ( err ) {
+								if ( !retryAWSAPI( iter, err ) ) callback( err );
+							} else {
+								callAWSAPI( iter, apigw, "putMethodResponse", {
+									httpMethod: method,
+									restApiId: iter.restapi.id,
+									resourceId: res,
+									statusCode: "200",
+									responseModels: {
+										"application/json" : "Empty"
+									}
+								}, function ( err, data ) {
+									if ( err ) {
+										if ( !retryAWSAPI( iter, err ) )
+											iter.progress( iter, -1, err );
+									} else {
+										iter.progress( iter, exports.METHOD, method ); 
+										callback( err, data );
+									}
+								} );
+							}
 						} );
 					} else {
+						if ( !retryAWSAPI( iter, err ) ) callback( err );
 					}
 				} );
 			} // end of internal function putopt
 
 			if ( account === undefined ) {
-				new aws.STS().getCallerIdentity( {}, function ( err, data ) {
+				callAWSAPI( iter, new aws.STS(), "getCallerIdentity", {},
+				function ( err, data ) {
 					if ( err ) {
-						console.log( err );
+						if ( !retryAWSAPI( iter, err ) )
+							console.log( err );
 					} else {
+						iter.prevCall = undefined;
 						account = iter.config["aws-account"] =
 							data.Account;
 						putopt();
@@ -174,7 +220,8 @@ createMethod( iter, method, info, res, callback ) {
 				putopt();
 			}
 		} else {
-			callback( err );
+			if ( !retryAWSAPI( iter, err ) )
+				callback( err );
 		}
 	} );
 }
@@ -192,21 +239,23 @@ iterateResource( iter, c, i ) {
 		var id;
 		var k = c.key[i];
 		if ( err ) {
+			if ( retryAWSAPI( iter, err ) ) return;
 			if ( err.code != 'ConflictException' ) {
 				console.log( err ); // XXX
 				iter.end();
 				return;
 			}
 			var path = iter.path + k;
-			id = iter.resource[path];
 			iter.progress( iter, exports.EXISTING_PATH, path );
 /*iter.run();
 return;*/
+			id = iter.resource[path];
 		} else {
+			iter.prevCall = undefined;
 			id = data.id;
+			iter.progress( iter, exports.PATH, k );
 		}
 		if ( k.charAt( 1 ) == '{' ) pushParam( iter, k );
-		iter.progress( iter, exports.PATH, k );
 		var apiset = c.apiset[k];
 		var key = Object.keys(apiset);
 		if ( key ) {
@@ -228,12 +277,12 @@ return;*/
 	if ( k.length > 0 ) {
 		if ( k.charAt(0) == '/' ) {
 			var path = k.substring(1);
-			apigw.createResource( {
+			callAWSAPI( iter, apigw, "createResource", {
 				parentId: c.root,
 				pathPart : path,
 				restApiId : iter.restapi.id
 			}, callback );
-			return iterator.PENDING;
+			return exports.iterator.PENDING;
 		} else if ( k != "configuration" ) {
 			createMethod( iter, k, c.apiset[k], c.root,
 				function( err, data ) {
@@ -248,7 +297,7 @@ return;*/
 					}
 					iter.run();
 				} );
-			return iterator.PENDING;
+			return exports.iterator.PENDING;
 		}
 	} else { // first call
 		callback( null, { id: c.root } );
@@ -256,19 +305,20 @@ return;*/
 }
 
 exports.createAPI = function
-	( api, name, symbol, path, subset, progress ) {
+	( iter, api, name, symbol, path, subset ) {
 	function newapi( err, restapi ) {
 		if ( err ) {
-			console.log( err );
+			if ( !retryAWSAPI( iter, err ) ) console.log( err );
 			return;
 		}
 		// 500 is maximum of current aws-sdk implementation
-		apigw.getResources( { restApiId: restapi.id, limit: 500 }, function (err,data) {
+		callAWSAPI( iter, apigw, "getResources",
+			{ restApiId: restapi.id, limit: 500 }, function (err,data) {
 			if ( err ) {
-				progress( null, -1, err );
+				if ( retryAWSAPI( iter, err ) ) return;
+				iter.progress( null, -1, err );
 			} else {
-				var root = null;
-				var iter = new iterator( progress );
+				var root;
 				iter.param = [];
 				iter.paramIndex = -1;
 				iter.resource = {};
@@ -334,13 +384,13 @@ exports.createAPI = function
 
 	if ( typeof name === 'string' ) {
 		if ( name == null ) api.configuration.name;
-		var resolved = this.getAPISet( name, symbol, function( err, data ) {
+		var resolved = this.getAPISet( iter, name, symbol, function( err, data ) {
 			if ( err ) {
 				if ( err.code != "NotFoundException" ) {
-					progress( null, -1, err );
+					iter.progress( null, -1, err );
 					return;
 				} else {
-					apigw.createRestApi( {
+					callAWSAPI( iter, apigw, "createRestApi", {
 						name : resolved
 					}, newapi );
 				}
@@ -349,7 +399,7 @@ exports.createAPI = function
 			}
 		} );
 		if ( resolved == null ) {
-			progress( null, -1, new CanisError( "SymbolNotFound",
+			iter.progress( null, -1, new CanisError( "SymbolNotFound",
 				"Fail to resolve symbol in string [" + name + "]." ) );
 		}
 	} else {
