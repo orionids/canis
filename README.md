@@ -10,20 +10,29 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.1.6
-- Functions needed to generate AWS APIs and methods automatically according to api.json
-- Delay and retry to call APIs in AWS SDK ( https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html )
-- delimiters to define a symbol is changed from {} to [] because {} is used to define path parameters !
-- Stage support in api.json
-- API key support
-- Command line option processor
-- 0.1.2 to 0.1.4 are mistakes while releasing files :-(
+## New features in 0.1.0 to 0.2.0
+- AWS related
+	- Functions needed to generate AWS APIs and methods automatically according to api.json
+	- Delay and retry to call APIs in AWS SDK ( https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html )
+- REST API server related
+	- Stage support in api.json
+	- API key support
+- Utilities related
+	- delimiters to define a symbol is changed from {} to [] because {} is used to define path parameters
+	- custom delimiters can be specified to resolve symbols
+	- Command line option processor
+	- Some examples are added
+	- request.js is added to call APIs various way ( basically test purpose )
 
 ## Known todo list
-- Full exception handling for AWS API generation ( virtually done )
-- AWS_PROXY support for AWS API generation ( done )
 - Static files
 - User account support using popular frameworks
+- Interoperability with Orion project
+
+## Examples are added
+- test/itertest.js : how to use canis iterator including aynchronous execution case
+- test/match.js : find the matching API ( to run this, cwd must be canis/test )
+- test/server.js : run an REST API server according to test/testapi.js ( to run this, cwd must be canis/test )
 
 ## Usage
 You should create a file api.json or api.js in current working direcrory and run
