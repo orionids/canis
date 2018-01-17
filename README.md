@@ -10,7 +10,7 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.2.0
+## New features in 0.1.0 to 0.2.1
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 	- Delay and retry to call APIs in AWS SDK ( https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html )
@@ -32,7 +32,10 @@ So Canis is a part of Orion project and will support :
 ## Examples are added
 - test/itertest.js : how to use canis iterator including aynchronous execution case
 - test/match.js : find the matching API ( to run this, cwd must be canis/test )
-- test/server.js : run an REST API server according to test/testapi.js ( to run this, cwd must be canis/test )
+- test/server.js : run an REST API server according to test/testapi.js
+	- to run this, cwd must be canis/test
+	- after executing this, access http://127.0.0.1:3000/test1/hello in a web browser
+	- API key can be enabled in test/testapi.js ( API cannot be called in a web browser )
 
 ## Usage
 You should create a file api.json or api.js in current working direcrory and run
