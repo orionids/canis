@@ -150,11 +150,17 @@ createMethod( iter, method, info, res, callback ) {
 					var p = iter.param[i];
 					param += "\"" + p + "\" : \"$input.params('" + p + "')\", "
 				}
+
+				var proxy = info["lambdaProxyIntegration"];
+				if ( proxy === undefined ) {
+					proxy = iter.config["lambdaProxyIntegration"];
+				}
+
 				callAWSAPI( iter, apigw, "putIntegration", {
 					httpMethod: method,
 					restApiId: iter.restapi.id,
 					resourceId: res,
-					type: "AWS", // XXX AWS_PROXY
+					type: proxy ? "AWS_PROXY" : "AWS",
 					integrationHttpMethod : "POST",
 					uri: "arn:aws:apigateway:" + gwregion +
 						":lambda:path/2015-03-31/functions/arn:aws:lambda:" +
@@ -272,7 +278,7 @@ return;*/
 			} );
 		}
 		iter.run();
-	}
+	} // end of inner function callback
 	var k = c.key[i];
 	if ( k.length > 0 ) {
 		if ( k.charAt(0) == '/' ) {
