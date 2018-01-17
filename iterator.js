@@ -22,6 +22,7 @@ module.exports = class {
 		e.total = n;
 		e.callback = cb;
 		e.pop = pop;
+		return this;
 	}
 
 	// end can be called instead of run after pending
@@ -31,8 +32,10 @@ module.exports = class {
 	}
 
 	run( brk ) {
-		while ( this.index >= 0 ) {
-			var e = this.stack[this.index];
+		var istk;
+		l_retry:
+		while ( (istk = this.index) >= 0 ) {
+			var e = this.stack[istk];
 			switch ( e.state ) {
 				case module.exports.PENDING_BREAK: brk = true; break;
 				case module.exports.PENDING_END: this.end(); return;
@@ -43,23 +46,23 @@ module.exports = class {
 					if ( i >= e.total ) break;
 					e.index = i + 1;
 					var result = e.callback( this, e.context, i );
-					if ( result == module.exports.BREAK ) {
+					if ( result == module.exports.BREAK )
 						break;
-					} else {
-						switch ( result ) {
-							case module.exports.PENDING:
-							return;
-							case module.exports.PENDING_BREAK:
-							e.state = module.exports.PENDING_BREAK;
-							return;
-							case module.exports.PENDING_END:
-							e.state = module.exports.PENDING_END;
-							return;
-							case module.exports.END:
-							this.end();
-							return;
-						}
+					switch ( result ) {
+						case module.exports.PENDING:
+						return;
+						case module.exports.PENDING_BREAK:
+						e.state = module.exports.PENDING_BREAK;
+						return;
+						case module.exports.PENDING_END:
+						e.state = module.exports.PENDING_END;
+						return;
+						case module.exports.END:
+						this.end();
+						return;
 					}
+					// if new iteration was pushed in the callback
+					if ( istk < this.index ) continue l_retry;
 				}
 			}
 			e.context = undefined;
