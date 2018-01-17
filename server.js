@@ -6,28 +6,64 @@
 exports.symbol = function ( s, symbol ) {
 	if ( Array.isArray(symbol) ) {
 		for ( var l = 0; l < symbol.length; l++ ) {
-			var sym = symbol[l][s];
-			if ( sym !== undefined ) return sym;
+			var sl = symbol[l];
+			if ( sl ) {
+				var sym = sl[s];
+				if ( sym !== undefined ) return sym;
+			}
 		}
 		return undefined;
 	}
+	if ( symbol === undefined ) return undefined;
 	return symbol[s];
 }
 
-exports.resolve = function( s, symbol ) {
-	var i = 0;
-	if ( s === undefined ) return "";
-	while (  ( i = s.indexOf( "[", i ) ) >= 0 ) {
-		var next = i + 1;
-		if ( s.charAt(next) == '[' ) {
-			s = s.substring( 0, i ) + s.substring( next );
-			i = next;
+exports.resolve = function( s, symbol, ctx ) {
+	var i;
+	var delim;
+	function replace( resolved, end ) {
+		s = s.substring( 0, i ) + resolved +
+			s.substring( end + delim.close.length );
+	}
+	for (;;) {
+		if ( ctx ) {
+			i = ctx.i;
+			delim = ctx.delim;
+			if ( delim !== undefined ) break;
 		} else {
-			var end = s.indexOf( "]", next );
+			ctx = {};
+			i = 0;
+		}
+		ctx.delim = delim = {
+			open: "[", close: "]", escape: "\\",
+		}
+		break;
+	}
+
+	if ( ctx.resolved !== undefined ) {
+		replace( ctx.resolved, ctx.end );
+	}
+
+	if ( s === undefined ) return "";
+	while ( ( i = s.indexOf( delim.open, i ) ) >= 0 ) {
+		var prev = i - 1;
+		var next = i + delim.open.length;
+		if ( s.charAt(prev) === delim.escape ) {
+			s = s.substring( 0, prev ) + s.substring( i );
+		} else {
+			var end = s.indexOf( delim.close, next );
+			if ( end < 0 ) return null;
 			var sym = s.substring( next, end );
-			var resolved = this.symbol( sym, symbol );
-			if ( resolved === undefined ) return null;
-			s = s.substring( 0, i ) + resolved + s.substring( end + 1 );
+			var resolved = exports.symbol( sym, symbol );
+			if ( resolved === undefined ) {
+				ctx.i = i;
+				ctx.end = end;
+				ctx.s = s;
+				ctx.symbol = sym;
+				ctx.resolved = undefined;
+				return undefined;
+			}
+			replace( resolved, end );
 		}
 	}
 	return s;
@@ -43,8 +79,10 @@ exports.stage = function ( config, url, ctx ) {
 			stage = match ( config.stage, url, ctx );
 			if ( stage !== undefined ) {
 				var apikey = stage.apiKey;
-				if ( apikey !== undefined ) ctx.apiKey = apikey;
-				break;
+				if ( apikey !== undefined ) {
+					ctx.apiKey = apikey;
+					break;
+				}
 			}
 		} else {
 			ctx.i = 0;
@@ -79,7 +117,7 @@ invoke(api,basepath,request,response) {
 
 	var config = api.configuration;
 	if ( config === undefined ) config = {};
-	if ( this.stage( config, url, ctx ) === undefined ) {
+	if ( exports.stage( config, url, ctx ) === undefined ) {
 		console.log( "Unknown stage " + ctx.part ); // XXX
 		return;
 	}
@@ -203,18 +241,21 @@ exports.load = function( file ) {
 exports.main = function(name,run) {
 	const cwd = process.cwd()
 	const file = cwd + "/" + name;
-	if ( run == undefined ) run = this.run;
+	if ( run == undefined ) run = exports.run;
 	try {
-		var api = this.load( file );
+		var api = exports.load( file );
 		if ( api === undefined ) return undefined;
 		run( api, cwd, null );
 		return 0;
 	} catch ( e ) {
 		if ( e.code === "MODULE_NOT_FOUND" ) run( null, cwd, null );
-		else require( file ); // raise exception again to know datails
+		else {
+		//	require( file ); // raise exception again to know datails
+console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
+		}
 	}
 	return 0;
 }
 
-if ( this.main( "api" ) === undefined )
+if ( exports.main( "api" ) === undefined )
 	console.log( "No body in api.js" );
