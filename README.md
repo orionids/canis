@@ -10,7 +10,7 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.2.1
+## New features in 0.1.0 to 0.2.2
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 	- Delay and retry to call APIs in AWS SDK ( https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html )
