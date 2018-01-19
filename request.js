@@ -29,11 +29,10 @@ exports.https = function ( server, api, basepath, request, response, extra ) {
 	if ( httpreq === undefined ) httpreq = require( "./httpreq" );
 	if ( https === undefined ) https = require( "https" );
 	if ( symbol == undefined ) symbol = [ process.env ];
-	request.path = server.resolve
-		( basepath ? basepath + request.url : request.url, symbol );
-	if ( resolveObject( server, request.headers, symbol ) &&
-	     resolveObject( server, request.body, symbol ) ) {
-		httpreq( https, request, function( err, data ) {
+	var r = resolveObject( server, request, symbol );
+	if( r ) {
+		r.path = basepath ? basepath + r.url : r.url;
+		httpreq( https, r, function( err, data ) {
 			if ( err ) console.log( err );else
 			response.write( data );
 		} );
@@ -44,9 +43,9 @@ exports.https = function ( server, api, basepath, request, response, extra ) {
 exports.local = function( server, api, basepath, request, response, extra ) {
 	var symbol;
 	if ( extra ) symbol = extra.symbol;
-
 	if ( symbol == undefined ) symbol = [ process.env ];
 	var r = resolveObject( server, request, symbol );
+	if( r ) {
 		r.on = function(n,f) {
 			switch ( n ) {
 				case "data" :
@@ -57,6 +56,7 @@ exports.local = function( server, api, basepath, request, response, extra ) {
 			}
 		}
 		server.invoke( api, basepath, r, response );
+	}
 // XXX exception
 }
 
