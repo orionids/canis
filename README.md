@@ -26,6 +26,8 @@ So Canis is a part of Orion project and will support :
 
 ## Known todo list
 - Static files
+- https support
+- An implementation like AWS lambda proxy integration ( AWS API auto generation supports this option )
 - User account support using popular frameworks
 - Interoperability with Orion project
 

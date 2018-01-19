@@ -1,6 +1,6 @@
 // vim: ts=4 sw=4 :
 
-var iterator = require( "../../canis/iterator" );
+var iterator = require( "canis/iterator" );
 var iter = new iterator( function() {
 	console.log( "done" );
 } );

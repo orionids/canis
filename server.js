@@ -134,11 +134,15 @@ invoke(api,basepath,request,response) {
 			} else if ( a === undefined ) {
 				for ( var prop in api ) {
 					if ( prop.charAt(1) == '{' ) {
-						a = api[prop];
+						var name = prop.substring( 2, prop.length - 1  );
 						// automatically transfer path parameter without mapping template
-						ev[prop.substring( 2, prop.length - 1  )] =
-							ctx.part.substring( 1 );
-						api["?"] = a; // add alias to avoid loop next time
+						ev[name] = ctx.part.substring( 1 );
+						// add alias to avoid loop next time
+						a = api[prop];
+						api["?"] = {
+							name: name,
+							child: a
+						}
 						break;
 					}
 				}
@@ -146,6 +150,9 @@ invoke(api,basepath,request,response) {
 					api["?"] = null;
 					break;
 				}
+			} else {
+				ev[a.name] = ctx.part.substring( 1 );
+				a = a.child;
 			}
 		}
 		if ( ctx.i < 0 ) break;
