@@ -87,13 +87,13 @@ exports.iterate = function( target, symbol, callback, server, api, basepath, req
 	var s = e.symbol;
 	if ( s === undefined ) {
 		e.symbol = [ null, process.env ];
-	} else if ( typeof e.symbol === 'object' ) {
-		e.symbol = [ null, s ];
-	} else { // assume array
+	} else if ( Array.isArray(s) ) { // assume array
 		e.symbol = [ null ];
 		for ( i = 0; i < s.length; i ++ ) {
 			e.symbol.push( s[i] );
 		}
+	} else { // assume object
+		e.symbol = [ null, s ];
 	}
 
 	i = 0;
