@@ -2,6 +2,8 @@ exports.body = {
 	"configuration" : {
 		"apiKeyRequired" : true,
 		"lambdaPrefix" : "",
+		"lambdaProxyIntegraton": undefined,
+		"lambdaProxyIntegrationInput": undefined,
 		"stage" : {
 			"test1" : {
 				"comment" : "A test stage",
