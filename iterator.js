@@ -1,7 +1,7 @@
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
-'use strict'
+'use strict';
 
 module.exports = class {
 	constructor( progress ) {
