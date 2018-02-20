@@ -4,18 +4,30 @@
 'use strict'
 
 exports.symbol = function ( s, symbol ) {
+	function onDemandSymbol( sl, s ) {
+		var r = sl[s];
+		if ( r ) return r;
+		r = sl['?'];
+		if ( r instanceof Function ) {
+			var ctx = sl['??'];
+			return r( ctx? ctx : sl, s );
+		}
+		return undefined;
+	}
+
+	var resolved;
 	if ( Array.isArray(symbol) ) {
 		for ( var l = 0; l < symbol.length; l++ ) {
 			var sl = symbol[l];
 			if ( sl ) {
-				var sym = sl[s];
-				if ( sym !== undefined ) return sym;
+				resolved = onDemandSymbol( sl, s );
+				if ( resolved ) return resolved;
 			}
 		}
 		return undefined;
 	}
-	if ( symbol === undefined ) return undefined;
-	return symbol[s];
+	if ( symbol ) return onDemandSymbol( symbol, s );
+	return undefined;
 }
 
 exports.resolve = function( s, symbol, ctx ) {
@@ -108,7 +120,7 @@ match( api, url, ctx ) {
 }
 
 function
-invoke(api,basepath,request,response) {
+invoke(context,api,basepath,request,response) {
 	// match API
 	const url = request.url;
 	var ctx = {};
@@ -121,8 +133,9 @@ invoke(api,basepath,request,response) {
 		console.log( "Unknown stage " + ctx.part ); // XXX
 		return;
 	}
-	ev.path = url.substring( ctx.i );
-	ev.stage = ctx.part;
+
+	var requestContext = { stage : ctx.part, resourcePath : url.substring( ctx.i ) };
+	var pathParameters;
 
 	for (;;) {
 		a = match ( api,url, ctx );
@@ -136,7 +149,9 @@ invoke(api,basepath,request,response) {
 					if ( prop.charAt(1) == '{' ) {
 						var name = prop.substring( 2, prop.length - 1  );
 						// automatically transfer path parameter without mapping template
-						ev[name] = ctx.part.substring( 1 );
+						if ( pathParameters === undefined )
+							pathParameters = {};
+						pathParameters[name] = ctx.part.substring( 1 );
 						// add alias to avoid loop next time
 						a = api[prop];
 						api["?"] = {
@@ -175,12 +190,26 @@ invoke(api,basepath,request,response) {
 				var str = '';
 				request.on('data', function(d) { str += d; } );
 				request.on('end', function() {
-					try {
-						ev.body = JSON.parse(str);
-					} catch ( e ) {
+					var lpi = m.lambdaProxyIntegration;
+					if ( lpi === undefined ) lpi = config.lambdaProxyIntegration;
+					var lpii = m.lambdaProxyIntegrationInput;
+					if ( lpii === undefined ) lpii = config.lambdaProxyIntegrationInput;
+					if ( lpi || lpii ) {
+						ev.body = str;
+						ev.requestContext = requestContext;
+						ev.pathParameters = pathParameters;
+					} else {
+						try {
+							ev.body = JSON.parse(str);
+						} catch ( e ) {
+//XXX
+						}
+						Object.assign( ev, pathParameters );
+						ev.stage = requestContext.stage;
+						ev.path = requestContext.resourcePath;
 					}
 					ev.headers = request.headers;
-					l.handler ( ev, null, function(xxx,result) {
+					l.handler ( ev, context, function(xxx,result) {
 						var type;
 						if ( typeof result === 'object' ) {
 							result = JSON.stringify( result, undefined, 2 );
@@ -189,9 +218,13 @@ invoke(api,basepath,request,response) {
 							(type = m.header["Content-Type"]) === undefined ) {
 							type = "text/plain";
 						}
+if ( xxx ) { // XXX more test is needed for exception case
+	console.log( xxx );
+} else {
 						response.writeHead(200, {'Content-Type' : type });
 						response.write( result );
 						response.end();
+}
 					} );
 				} );
 				request.on('error', function(e) {
@@ -211,10 +244,10 @@ invoke(api,basepath,request,response) {
 exports.match = match;
 exports.invoke = invoke;
 
-exports.run = function(api,basepath,module) {
+exports.run = function(context,api,basepath,module) {
 	if ( api ) {
 		function dispatch( request, response ) {
-			invoke( api, basepath, request, response );
+			invoke( context, api, basepath, request, response );
 		}
 
 		const http = require( "http" );
@@ -245,17 +278,17 @@ exports.load = function( file ) {
 // return 0 if no problem
 // -1 if module not found
 // undefined if no api body
-exports.main = function(name,run) {
+exports.main = function(context,name,run) {
 	const cwd = process.cwd()
 	const file = cwd + "/" + name;
 	if ( run == undefined ) run = exports.run;
 	try {
 		var api = exports.load( file );
 		if ( api === undefined ) return undefined;
-		run( api, cwd, null );
+		run( context, api, cwd, null );
 		return 0;
 	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" ) run( null, cwd, null );
+		if ( e.code === "MODULE_NOT_FOUND" ) run( context, null, cwd, null );
 		else {
 		//	require( file ); // raise exception again to know datails
 console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
