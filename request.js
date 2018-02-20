@@ -19,7 +19,20 @@ resolveObject( server, o, symbol ) {
 	return newo;
 }
 
-exports.https = function ( server, api, basepath, request, response, extra ) {
+exports.override = function( target, source ) {
+	for ( s in source ) {
+		var sv = source[s];
+		if ( typeof sv === 'object' ) {
+			exports.override( target[s], sv );
+		} else {
+			target[s + "_orig"] = target[s];
+			target[s] = sv;
+		}
+	}
+}
+
+
+exports.https = function ( server, context, api, basepath, request, response, extra ) {
 	var httpreq, https, symbol;
 	if ( extra ) {
 		httpreq = extra.httpreq;
@@ -29,7 +42,7 @@ exports.https = function ( server, api, basepath, request, response, extra ) {
 	if ( httpreq === undefined ) httpreq = require( "./httpreq" );
 	if ( https === undefined ) https = require( "https" );
 	if ( symbol == undefined ) symbol = [ process.env ];
-	var r = resolveObject( server, request, symbol );
+	var r = resolveObject( server, request, symbol ); // XXX resolveObject has some bugs
 	if( r ) {
 		r.path = basepath ? basepath + r.url : r.url;
 		httpreq( https, r, function( err, data ) {
@@ -40,7 +53,7 @@ exports.https = function ( server, api, basepath, request, response, extra ) {
 //XXX exception
 }
 
-exports.local = function( server, api, basepath, request, response, extra ) {
+exports.local = function( server, context, api, basepath, request, response, extra ) {
 	var symbol;
 	if ( extra ) symbol = extra.symbol;
 	if ( symbol == undefined ) symbol = [ process.env ];
@@ -55,17 +68,18 @@ exports.local = function( server, api, basepath, request, response, extra ) {
 				case "end": f(); break;
 			}
 		}
-		server.invoke( api, basepath, r, response );
+		server.invoke( context, api, basepath, r, response );
 	}
 // XXX exception
 }
 
-exports.iterate = function( target, symbol, callback, server, api, basepath, request, response, extra ) {
+exports.iterate = function
+	( target, symbol, callback, server, context, api, basepath, request, response, extra ) {
 	function perform() {
 		callback( i, symbol.length );
 		if ( i < symbol.length ) {
 			e.symbol[0] = symbol[i++];
-			exports[target]( server, api, basepath,
+			exports[target]( server, context, api, basepath,
 				request, r, e );
 		}
 	}
