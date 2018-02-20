@@ -10,10 +10,17 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.2.2
+## New features in 0.1.0 to 0.3.0
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
+		- property names begin with ^ or /^ are excluded from auto generation
+		- Bug fixes for header mapping
+		- AWS proxy support
+		- AWS proxy style input support ( when AWS proxy is not used )
+	- requestContext and pathParameters are used to maintain compatibility with lambda proxy integration
 	- Delay and retry to call APIs in AWS SDK ( https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html )
+	- Wrapper functions for DynamoDB.DocumentClient ( partition key query, primary key query, update expression, delete queried results )
+	- AWS compatibility ( very early implementation )
 - REST API server related
 	- Stage support in api.json
 	- API key support
@@ -22,12 +29,15 @@ So Canis is a part of Orion project and will support :
 	- custom delimiters can be specified to resolve symbols
 	- Command line option processor
 	- Some examples are added
+		- On demand symbol resolve ( test/resolve.js )
 	- request.js is added to call APIs various way ( basically test purpose )
+		- request iteration
+		- some implementations to support mock
 
 ## Known todo list
 - Static files
 - https support
-- An implementation like AWS lambda proxy integration ( AWS API auto generation supports this option )
+- An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
 - User account support using popular frameworks
 - Interoperability with Orion project
 
