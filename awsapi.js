@@ -1,33 +1,19 @@
+// vim:ts=4 sw=4:
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
 'use strict'
 exports.iterator = require( "./iterator" );
-
 var server = require( "./server" );
+const awssdk = require( "./awssdk" );
 
 exports.PATH = 0;
 exports.METHOD = 1;
 exports.EXISTING_PATH = 2;
 exports.EXISTING_METHOD = 3;
 
-function recoverConfig(aws) {
-	if ( aws ) {
-		var region = process.env.AWS_DEFAULT_REGION;
-		if ( region != "" ) aws.config.update( { region : region } );
-		var ddblocal = process.env.DYNAMODB_LOCAL;
-		if ( ddblocal != "" ) aws.config.update( { endpoint: ddblocal } );
-	}
-}
 
-exports.recover = recoverConfig;
-exports.initialize = function(aws) {
-	if ( aws == null ) aws = require( 'aws-sdk' );
-	recoverConfig(aws);
-	return aws;
-}
-
-const aws = this.initialize(null);
+const aws = awssdk.initialize(null);
 exports.AWS = aws;
 
 const apigw = new aws.APIGateway();
@@ -111,11 +97,11 @@ exports.removeAPISet = function( iter, name, symbol, f ) {
 
 function
 createMethod( iter, method, info, res, callback ) {
-	var apikey = info["apiKey"];
+	var apikeyRequired = info["apiKeyRequired"];
 	callAWSAPI( iter, apigw, "putMethod", {
 		authorizationType: "NONE", // XXX
-		apiKeyRequired : apikey === undefined ?
-			iter.config["apiKey"] : apikey,
+		apiKeyRequired : apikeyRequired === undefined ?
+			iter.config["apiKeyRequired"] : apiKeyRequired,
 		httpMethod: method,
 		restApiId: iter.restapi.id,
 		resourceId: res
@@ -145,22 +131,44 @@ createMethod( iter, method, info, res, callback ) {
 			var account = iter.config["aws-account"]; // XXX undefined?
 
 			function putopt() {
-				var param = "";
-				for ( var i = 0; i < iter.param.length; i++ ) {
+				var lpi = info["lambdaProxyIntegration"];
+				if ( lpi === undefined ) {
+					lpi = iter.config["lambdaProxyIntegration"];
+				}
+				var lpii = info["lambdaProxyIntegrationInput"];
+				if ( lpii === undefined ) {
+					lpii = iter.config["lambdaProxyIntegrationInput"];
+				}
+
+				var type = "AWS";
+				var param, end, reqctx;
+				if ( lpi || lpii ) {
+					if ( lpi ) type = "AWS_PROXY";
+					if ( iter.paramIndex >= 0 ) {
+						param = "\"pathParameters\":{";
+						end = "},";
+					} else {
+						param = "";
+						end = "";
+					}
+					reqctx = "\"requestContext\":{\"stage\": \"$context.stage\",\"resourcePath\":\"$context.resourcePath\"}";
+				} else {
+					param = "";
+					end = iter.paramIndex >= 0 ? ", " : "";
+					reqctx = "\"stage\":\"$context.stage\", \"path\": \"$context.resourcePath\"";
+				}
+
+				for ( var i = 0; i <= iter.paramIndex; i++ ) {
 					var p = iter.param[i];
-					param += "\"" + p + "\" : \"$input.params('" + p + "')\", "
+					if ( i != 0 ) param += ", ";
+					param += "\"" + p + "\":\"$input.params('" + p + "')\"";
 				}
-
-				var proxy = info["lambdaProxyIntegration"];
-				if ( proxy === undefined ) {
-					proxy = iter.config["lambdaProxyIntegration"];
-				}
-
+				if ( i > 0 ) param += end;
 				callAWSAPI( iter, apigw, "putIntegration", {
 					httpMethod: method,
 					restApiId: iter.restapi.id,
 					resourceId: res,
-					type: proxy ? "AWS_PROXY" : "AWS",
+					type: type,
 					integrationHttpMethod : "POST",
 					uri: "arn:aws:apigateway:" + gwregion +
 						":lambda:path/2015-03-31/functions/arn:aws:lambda:" +
@@ -171,7 +179,9 @@ createMethod( iter, method, info, res, callback ) {
 					credentials: "arn:aws:iam::" + account + ":role/" + role,
 					passthroughBehavior: "WHEN_NO_TEMPLATES",
 					requestTemplates : {
-						"application/json" : "{" + param + "\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end }, \"stage\": \"$context.stage\", \"path\": \"$context.resourcePath\" }"
+						"application/json" : "{" + param +
+						"\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end },"
+						+ reqctx + "}"
 					}
 				}, function ( err, data ) {
 					if ( err == null ) {
@@ -281,15 +291,18 @@ return;*/
 	} // end of inner function callback
 	var k = c.key[i];
 	if ( k.length > 0 ) {
-		if ( k.charAt(0) == '/' ) {
-			var path = k.substring(1);
-			callAWSAPI( iter, apigw, "createResource", {
-				parentId: c.root,
-				pathPart : path,
-				restApiId : iter.restapi.id
-			}, callback );
-			return exports.iterator.PENDING;
-		} else if ( k != "configuration" ) {
+		var first = k.charAt(0);
+		if ( first == '/' ) {
+			if ( k.charAt(1) != '^' ) {
+				var path = k.substring(1);
+				callAWSAPI( iter, apigw, "createResource", {
+					parentId: c.root,
+					pathPart : path,
+					restApiId : iter.restapi.id
+				}, callback );
+				return exports.iterator.PENDING;
+			}
+		} else if ( first !='^' && k != "configuration" ) {
 			createMethod( iter, k, c.apiset[k], c.root,
 				function( err, data ) {
 					if ( err ) {
