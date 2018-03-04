@@ -6,11 +6,11 @@ application framework which supports various forms of application
 including web app.
 
 So Canis is a part of Orion project and will support :
-- RESTful web service framework, compatible to AWS API gateway. ( initial implementation is done )
+- RESTful web service framework, compatible to various cloud services including AWS API gateway. ( initial implementation is done )
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.3.0
+## New features in 0.1.0 to 0.3.1
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 		- property names begin with ^ or /^ are excluded from auto generation
@@ -33,6 +33,8 @@ So Canis is a part of Orion project and will support :
 	- request.js is added to call APIs various way ( basically test purpose )
 		- request iteration
 		- some implementations to support mock
+	- invoke.js to support various function call
+	- storage.js to support various storage access using compatible functions
 
 ## Known todo list
 - Static files
