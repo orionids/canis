@@ -211,6 +211,14 @@ invoke(context,api,basepath,request,response) {
 					ev.headers = request.headers;
 					l.handler ( ev, context, function(xxx,result) {
 						var type;
+						var stat;
+						if ( lpi ) {
+							stat = result.statusCode;
+							result = result.body;
+							// XXX case when result has headers
+						} else {
+							stat = 200;
+						}
 						if ( typeof result === 'object' ) {
 							result = JSON.stringify( result, undefined, 2 );
 							type = 'application/json';
@@ -221,7 +229,7 @@ invoke(context,api,basepath,request,response) {
 if ( xxx ) { // XXX more test is needed for exception case
 	console.log( xxx );
 } else {
-						response.writeHead(200, {'Content-Type' : type });
+						response.writeHead(stat, {'Content-Type' : type });
 						response.write( result );
 						response.end();
 }
