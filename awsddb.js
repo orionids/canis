@@ -1,9 +1,11 @@
+// vim: ts=4 sw=4 :
 // Copyright (c) 2018, adaptiveflow
 // Distributed under ISC
 
 'use strict';
 
-exports.partitionKeyQuery = function( ddbcli, tblname, key, val, callback )
+exports.partitionKeyQuery =
+function( ddbcli, tblname, key, val, callback )
 {
 	ddbcli.query( {
 		TableName: tblname,
@@ -38,7 +40,8 @@ exports.primaryKeyQuery = function
 	}, callback );
 };
 
-exports.updateExpression = function( param, action, state, name, value )
+exports.updateExpression = function
+	( param, action, state, name, value )
 {
 	var cmd;
 	var expr = "#" + name;
