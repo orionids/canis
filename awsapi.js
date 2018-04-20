@@ -3,9 +3,9 @@
 // Distributed under ISC License
 
 'use strict'
-exports.iterator = require( "./iterator" );
-var server = require( "./server" );
-const awssdk = require( "./awssdk" );
+exports.iterator = require( "canis/iterator" );
+var server = require( "canis/server" );
+const awssdk = require( "canis/awssdk" );
 
 exports.PATH = 0;
 exports.METHOD = 1;
