@@ -1,23 +1,28 @@
+// vim: ts=4 sw=4 :
 // Copyright (c) 2017, 2018 adaptiveflow
 // Distributed under ISC
 
+/*
 function
 resolveObject( server, o, symbol ) {
-	var newo = {};
-	for ( p in o ) {
-		var v = o[p];
-		if ( typeof v === 'string' ) {
-			if ( (newo[p] = server.resolve( v, symbol )) === undefined )
+	if ( Array.isArray( o ) ) {
+		for ( var i = 0; i < o.length; i++ ) {
+			if ( ( o[i] = resolveObject
+				( server, o[i], symbol ) ) === undefined )
 				return undefined;
-		} else if ( typeof v === 'object' ) {
-			if ( (newo[p] = resolveObject( server, v, symbol )) === undefined )
+		}
+	} else switch ( typeof o ) {
+		case "string":
+		return server.resolve( o, symbol );
+		case "object":
+		for ( var p in o ) {
+			if ( (o[p] = resolveObject
+				( server, o[p], symbol )) === undefined )
 				return undefined;
-		} else {
-			newo[p] = v;
 		}
 	}
-	return newo;
-}
+	return o;
+}*/
 
 exports.override = function( target, source ) {
 	for ( s in source ) {
@@ -32,32 +37,39 @@ exports.override = function( target, source ) {
 }
 
 
-exports.https = function ( server, context, api, basepath, request, response, extra ) {
+exports.https = function
+( server, api, basepath, request, response, param ) {
 	var httpreq, https, symbol;
-	if ( extra ) {
-		httpreq = extra.httpreq;
-		https = extra.https;
-		symbol = extra.symbol;
+	if ( param ) {
+		httpreq = param.httpreq;
+		https = param.https;
+		symbol = param.symbol;
 	}
-	if ( httpreq === undefined ) httpreq = require( "./httpreq" );
+	if ( httpreq === undefined ) httpreq = require( "canis/httpreq" );
 	if ( https === undefined ) https = require( "https" );
-	if ( symbol == undefined ) symbol = [ process.env ];
-	var r = resolveObject( server, request, symbol ); // XXX resolveObject has some bugs
+	var r = server.object( request, {
+		symbol : symbol === undefined ?
+			[ process.env ] : symbol
+	} );
 	if( r ) {
 		r.path = basepath ? basepath + r.url : r.url;
 		httpreq( https, r, function( err, data ) {
 			if ( err ) console.log( err );else
 			response.write( data );
+			response.end( data );
 		} );
 	}
 //XXX exception
 }
 
-exports.local = function( server, context, api, basepath, request, response, extra ) {
+exports.local = function
+( server, api, basepath, request, response, param ) {
 	var symbol;
-	if ( extra ) symbol = extra.symbol;
-	if ( symbol == undefined ) symbol = [ process.env ];
-	var r = resolveObject( server, request, symbol );
+	if ( param ) symbol = param.symbol;
+	var r = server.object( request, {
+		symbol : symbol === undefined ?
+			[ process.env ] : symbol
+	} );
 	if( r ) {
 		r.on = function(n,f) {
 			switch ( n ) {
@@ -68,21 +80,14 @@ exports.local = function( server, context, api, basepath, request, response, ext
 				case "end": f(); break;
 			}
 		}
-		server.invoke( context, api, basepath, r, response );
+		return server.invoke( api, basepath, r, response, param );
 	}
 // XXX exception
 }
 
-exports.iterate = function
-	( target, symbol, callback, server, context, api, basepath, request, response, extra ) {
-	function perform() {
-		callback( i, symbol.length );
-		if ( i < symbol.length ) {
-			e.symbol[0] = symbol[i++];
-			exports[target]( server, context, api, basepath,
-				request, r, e );
-		}
-	}
+exports.iterate = function( target, symbol, callback,
+	server, api, basepath, request, response, param ) {
+	var i;
 	var r = {
 		writeHead: response.writeHead,
 		write : response.write,
@@ -92,12 +97,19 @@ exports.iterate = function
 		}
 	};
 
+	function perform() {
+		callback( i, symbol.length );
+		if ( i < symbol.length ) {
+			e.symbol[0] = symbol[i++];
+			exports[target]( server, api, basepath,
+				request, r, e );
+		}
+	}
 	var e = {};
-	for ( var p in extra ) {
-		e[p] = extra[p];
+	for ( var p in param ) {
+		e[p] = param[p];
 	}
 
-	var i;
 	var s = e.symbol;
 	if ( s === undefined ) {
 		e.symbol = [ null, process.env ];
@@ -114,3 +126,6 @@ exports.iterate = function
 	if ( !symbol || symbol.length <= 0 ) symbol = [ null ];
 	perform();
 }
+
+
+// EOF
