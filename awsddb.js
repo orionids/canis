@@ -5,16 +5,17 @@
 'use strict';
 
 exports.partitionKeyQuery =
-function( ddbcli, tblname, key, val, callback )
+function( storage, context, tblname, key, callback )
 {
-	ddbcli.query( {
+	context.ddbcli().query( {
+		IndexName: storage.getIndexName(key),
 		TableName: tblname,
 		KeyConditionExpression: "#k=:v",
 		ExpressionAttributeNames: {
-			"#k" : key
+			"#k" : key.p
 		},
 		ExpressionAttributeValues: {
-			":v" : val
+			":v" : key.pval
 		}
 	}, callback );
 };
@@ -53,18 +54,20 @@ exports.updateExpression = function
 			param.ExpressionAttributeValues = {};
 		param.ExpressionAttributeValues[":" + name] = value;
 	}
-	if ( action == state ) expr = "," + expr;
+	if ( action === state ) expr = "," + expr;
 	switch ( action ) {
 		case 0: cmd = "set"; expr += "=:" + name; break;
 		case 1 : cmd = "add"; expr += " :" + name; break;
-		case -1: cmd = "delete"; break;
+		case -1 : cmd = "delete"; expr += " :" + name; break;
 		default: cmd = "remove";
 	}
 	if ( action != state ) {
-		if ( param.UpdateExpression === undefined ) param.UpdateExpression = "";
-		param.UpdateExpression += cmd + expr;
+		if ( param.UpdateExpression === undefined )
+			param.UpdateExpression = cmd + expr;
+		else
+			param.UpdateExpression += " " + cmd + expr;
 	} else {
-		param.UpdateExpression +=expr;
+		param.UpdateExpression += expr;
 	}
 	return action;
 };
