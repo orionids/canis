@@ -1,3 +1,4 @@
+// vim: ts=4 sw=4 :
 // Copyright (C) 2018, adaptiveflow
 // Distributed under ISC
 
@@ -41,11 +42,14 @@ exports.next = function ( optionContext ) {
 
 // unknown options are strictly checked
 
-exports.parse = function ( optionContext, delimiter, longOption, charOption ) {
+exports.parse = function
+	( optionContext, delimiter, longOption, charOption ) {
 	var arg;
 	while ( arg = this.next( optionContext ) ) {
+		var longNameIndex = 1;
 		if ( arg.charAt(0) == '-' ) {
-			if ( arg.charAt(1) == '-' ) {
+			if ( optionContext.singleIndicator ||
+				arg.charAt(longNameIndex++) == '-' ) {
 				if ( !longOption ) return undefined;
 				var i = arg.lastIndexOf( delimiter );
 				var p;
@@ -54,7 +58,8 @@ exports.parse = function ( optionContext, delimiter, longOption, charOption ) {
 				} else {
 					i = undefined;
 				}
-				var o = longOption[arg.substring(2,i)];
+				var o = longOption
+					[arg.substring(longNameIndex,i)];
 				if ( o === undefined ) return undefined;
 				if ( o.dispatch( p, optionContext ) ) return null;
 			} else {
