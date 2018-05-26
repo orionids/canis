@@ -151,11 +151,11 @@ createMethod( iter, method, info, res, callback ) {
 						param = "";
 						end = "";
 					}
-					reqctx = "\"requestContext\":{\"stage\": \"$context.stage\",\"resourcePath\":\"$context.resourcePath\"}";
+					reqctx = "\"requestContext\":{\"stage\": \"$context.stage\",\"resourcePath\":\"$context.resourcePath\",\"httpMethod\":\"$context.httpMethod\"}";
 				} else {
 					param = "";
 					end = iter.paramIndex >= 0 ? ", " : "";
-					reqctx = "\"stage\":\"$context.stage\", \"path\": \"$context.resourcePath\"";
+					reqctx = "\"stage\":\"$context.stage\", \"path\": \"$context.resourcePath\",\"method\"=\"$context.httpMethod\"";
 				}
 
 				for ( var i = 0; i <= iter.paramIndex; i++ ) {
@@ -257,8 +257,7 @@ iterateResource( iter, c, i ) {
 		if ( err ) {
 			if ( retryAWSAPI( iter, err ) ) return;
 			if ( err.code != 'ConflictException' ) {
-				console.log( err ); // XXX
-				iter.end();
+				iter.end( err );
 				return;
 			}
 			var path = iter.path + k;
