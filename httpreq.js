@@ -1,3 +1,4 @@
+// vim: ts=4 sw=4 :
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
@@ -5,10 +6,12 @@
 module.exports = function( mod, o, f ) {
 	try {
 		let req = mod.request( o, function(res) {
-			let str = '';
-			res.on('data', function(d) { str += d; } );
+			let r = '';
+			res.on('data', function(d) {
+				r += d;
+			} );
 			res.on('end', function() {
-				f( null, str );
+				f( null, r, req );
 			});
 		});
 		if ( o.data !== undefined )
