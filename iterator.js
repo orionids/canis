@@ -1,3 +1,4 @@
+// vim: ts=4 sw=4 :
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
@@ -26,9 +27,9 @@ module.exports = class {
 	}
 
 	// end can be called instead of run after pending
-	end() {
-		this.progress( this, module.exports.TERMINATE );
-		this.index = -1;
+	end(reason) {
+		this.progress( this, module.exports.END, reason );
+		this.index = -1; // reset index for re-run
 	}
 
 	run( brk ) {
