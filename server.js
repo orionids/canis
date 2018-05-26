@@ -1,3 +1,4 @@
+// vim: ts=4 sw=4 :
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
@@ -21,7 +22,8 @@ exports.symbol = function ( s, symbol ) {
 			var sl = symbol[l];
 			if ( sl ) {
 				resolved = onDemandSymbol( sl, s );
-				if ( resolved ) return resolved;
+				// exclude both null and undefined
+				if ( resolved != null ) return resolved;
 			}
 		}
 		return undefined;
@@ -41,7 +43,7 @@ exports.resolve = function( s, symbol, ctx ) {
 		if ( ctx ) {
 			i = ctx.i;
 			delim = ctx.delim;
-			if ( delim !== undefined ) break;
+			if ( delim ) break;
 		} else {
 			ctx = {};
 			i = 0;
@@ -79,6 +81,36 @@ exports.resolve = function( s, symbol, ctx ) {
 		}
 	}
 	return s;
+}
+
+exports.object = function( o, r ) {
+	if ( Array.isArray( o ) ) {
+		var newa = new Array(o.length);
+		for ( var i = 0; i < o.length; i++ ) {
+			var oi = o[i];
+			if ( oi !== undefined ) {
+				if ( ( newa[i] = exports.object
+					( oi, r ) ) === undefined )
+					return undefined;
+			}
+		}
+		return newa;
+	} else switch ( typeof o ) {
+		case "object":
+		var newo = {}; 
+		for ( var p in o ) {
+			var op = o[p];
+			if ( op !== undefined ) {
+				if ( (newo[p] = exports.object
+					( o[p], r )) === undefined )
+					return undefined;
+			}
+		}
+		return newo;
+		case "string":
+		if ( r ) return exports.resolve( o, r.symbol, r.ctx );
+	}
+	return o;
 }
 
 exports.stage = function ( config, url, ctx ) {
@@ -120,13 +152,13 @@ match( api, url, ctx ) {
 }
 
 function
-invoke(context,api,basepath,request,response) {
+invoke(api,basepath,request,response,param) {
+
 	// match API
-	const url = request.url;
+	var url = request.url;
 	var ctx = {};
 	var a;
 	var ev = {}
-
 	var config = api.configuration;
 	if ( config === undefined ) config = {};
 	if ( exports.stage( config, url, ctx ) === undefined ) {
@@ -134,8 +166,31 @@ invoke(context,api,basepath,request,response) {
 		return;
 	}
 
-	var requestContext = { stage : ctx.part, resourcePath : url.substring( ctx.i ) };
-	var pathParameters;
+	var queryParam;
+	var queryParamIndex = url.lastIndexOf('?');
+	if ( queryParamIndex > 0 ) {
+		queryParam = {}; // AWS supplies null object if query string param is absent
+		// XXX duplicated in ueParameter
+		var p = url.substring( queryParamIndex + 1 ).split('&');
+		for ( var i = 0; i < p.length; i++ ) {
+			var v = p[i].split('=');
+			if ( v.length > 1 ) queryParam[v[0]] = v[1];
+		}
+		url = url.substring( 0, queryParamIndex );
+	}
+
+	var requestContext = {
+		stage : ctx.part,
+		resourcePath : url.substring( ctx.i ),
+		httpMethod: request.method
+	};
+	var pathParameters; // pathParameter is undefined if no path parameters in AWS
+	function addPathParameter( name ) {
+		if ( pathParameters === undefined )
+			pathParameters = {};
+		// automatically transfer path parameter without mapping template
+		pathParameters[name] = ctx.part.substring( 1 );
+	}
 
 	for (;;) {
 		a = match ( api,url, ctx );
@@ -148,10 +203,7 @@ invoke(context,api,basepath,request,response) {
 				for ( var prop in api ) {
 					if ( prop.charAt(1) == '{' ) {
 						var name = prop.substring( 2, prop.length - 1  );
-						// automatically transfer path parameter without mapping template
-						if ( pathParameters === undefined )
-							pathParameters = {};
-						pathParameters[name] = ctx.part.substring( 1 );
+						addPathParameter( name );
 						// add alias to avoid loop next time
 						a = api[prop];
 						api["?"] = {
@@ -166,7 +218,7 @@ invoke(context,api,basepath,request,response) {
 					break;
 				}
 			} else {
-				ev[a.name] = ctx.part.substring( 1 );
+				addPathParameter( a.name );
 				a = a.child;
 			}
 		}
@@ -186,7 +238,9 @@ invoke(context,api,basepath,request,response) {
 				}
 			}
 			try {
-				var l = require( basepath ? basepath + "/" + m.lambda : m.lambda  );
+				var lambda = m.lambda;
+				var l = require( basepath ?
+					basepath + "/" + lambda : lambda  );
 				var str = '';
 				request.on('data', function(d) { str += d; } );
 				request.on('end', function() {
@@ -196,6 +250,7 @@ invoke(context,api,basepath,request,response) {
 					if ( lpii === undefined ) lpii = config.lambdaProxyIntegrationInput;
 					if ( lpi || lpii ) {
 						ev.body = str;
+						ev.queryStringParameters = queryParam;
 						ev.requestContext = requestContext;
 						ev.pathParameters = pathParameters;
 					} else {
@@ -209,7 +264,26 @@ invoke(context,api,basepath,request,response) {
 						ev.path = requestContext.resourcePath;
 					}
 					ev.headers = request.headers;
-					l.handler ( ev, context, function(xxx,result) {
+					var ctx;
+					do {
+						var fn = m.lambdaName;
+						if ( !fn ) {
+							fn = lambda.substring
+							(lambda.lastIndexOf("/") + 1);
+						}
+						if ( param ) {
+							ctx = param.context;
+							if ( ctx ) {
+								ctx.functionName = fn;
+								break;
+							}
+						}
+						ctx = {
+							functionName: fn
+						};
+					} while( 0 );
+					l.handler ( ev, ctx,
+					function(xxx,result) {
 						var type;
 						var stat;
 						if ( lpi ) {
@@ -238,13 +312,13 @@ if ( xxx ) { // XXX more test is needed for exception case
 				request.on('error', function(e) {
 					console.log( e ); // XXX do response here
 				});
+				return 0;
 			} catch ( e ) {
 				console.log( e );
 			}
 		} else {
 			console.log( "Unknown method " + request.method );
 		}
-		return 0;
 	} else {
 		console.log( "Unknown API " + request.url );
 	}
@@ -252,10 +326,10 @@ if ( xxx ) { // XXX more test is needed for exception case
 exports.match = match;
 exports.invoke = invoke;
 
-exports.run = function(context,api,basepath,module) {
+exports.run = function(api,basepath,param) {
 	if ( api ) {
 		function dispatch( request, response ) {
-			invoke( context, api, basepath, request, response );
+			invoke( api, basepath, request, response, param );
 		}
 
 		const http = require( "http" );
@@ -274,11 +348,15 @@ exports.run = function(context,api,basepath,module) {
 // __dirname + "/" + relpath to use relative path
 // like 'require' in an arbitrary module
 const path = require( "path" );
-exports.load = function( file ) {
+exports.load = function( file, param ) {
 	var module = require( file );
 	if ( path.extname( require.resolve( file ) ) == ".js" ) {
 		module = module.body;
 		if ( module === undefined ) return undefined;
+		if ( typeof module === "function" ) {
+			return module.apply( this, param );
+
+}
 	}
 	return module;
 }
@@ -286,17 +364,58 @@ exports.load = function( file ) {
 // return 0 if no problem
 // -1 if module not found
 // undefined if no api body
-exports.main = function(context,name,run) {
+// param :
+//   run
+//   interactive
+//   module : external module
+//   context : 2nd param of handler
+
+exports.main = function(name,param) {
+	var run;
+	if ( typeof param === "function" ) {
+		run = param;
+	} else if ( param ) {
+		run = param.run;
+
+		if ( param.parse ) {
+			var readline = require( "readline" );
+			var rl = readline.createInterface({
+				input: process.stdin,
+				output: process.stdout
+			});
+			(function interactive() {
+				var p = param.prompt
+				rl.question(p? p : "> ", function (input) {
+					var state;
+					try {
+						param.parse(input,function(pause) {
+							if ( pause === false )
+								interactive();
+							else if ( !pause )
+								rl.close();
+							state = true;
+						});
+					} catch ( e ) {
+						console.log( e );
+					}
+					if ( state === undefined )
+						interactive();
+				} );
+			} )();
+		}
+	}
+	if ( !run ) run = exports.run;
+
 	const cwd = process.cwd()
 	const file = cwd + "/" + name;
-	if ( run == undefined ) run = exports.run;
 	try {
 		var api = exports.load( file );
 		if ( api === undefined ) return undefined;
-		run( context, api, cwd, null );
+		run( api, cwd, param );
 		return 0;
 	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" ) run( context, null, cwd, null );
+		if ( e.code === "MODULE_NOT_FOUND" )
+			run( null, cwd, param );
 		else {
 		//	require( file ); // raise exception again to know datails
 console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
