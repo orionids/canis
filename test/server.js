@@ -1,1 +1,1 @@
-require( "../server.js" ).main( "testapi" );
+require( "canis/server.js" ).main( "testapi" );
