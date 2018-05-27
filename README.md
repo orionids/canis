@@ -10,7 +10,7 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.3.1
+## New features in 0.1.0 to 0.3.2
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 		- property names begin with ^ or /^ are excluded from auto generation
@@ -24,6 +24,8 @@ So Canis is a part of Orion project and will support :
 - REST API server related
 	- Stage support in api.json
 	- API key support
+	- Custom interactive command
+	- Client socket management
 - Utilities related
 	- delimiters to define a symbol is changed from {} to [] because {} is used to define path parameters
 	- custom delimiters can be specified to resolve symbols
@@ -34,12 +36,14 @@ So Canis is a part of Orion project and will support :
 		- request iteration
 		- some implementations to support mock
 	- invoke.js to support various function call
-	- storage.js to support various storage access using compatible functions
+	- storage.js
+		- to support various storage access using compatible functions
+		- Memory DB to simulate specific storage state using compatible API
 
 ## Known todo list
 - Static files
 - https support
-- An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
+- Done(0.3.2) : An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
 - User account support using popular frameworks
 - Interoperability with Orion project
 
@@ -48,8 +52,9 @@ So Canis is a part of Orion project and will support :
 - test/match.js : find the matching API ( to run this, cwd must be canis/test )
 - test/server.js : run an REST API server according to test/testapi.js
 	- to run this, cwd must be canis/test
-	- after executing this, access http://127.0.0.1:3000/test1/hello in a web browser
+	- after executing this, access http://127.0.0.1:5000/test1/hello in a web browser
 	- API key can be enabled in test/testapi.js ( API cannot be called in a web browser )
+- test/unique.js : Unique time generation
 
 ## Usage
 You should create a file api.json or api.js in current working direcrory and run
