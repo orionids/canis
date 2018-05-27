@@ -30,7 +30,7 @@ exports.symbol = function ( s, symbol ) {
 	}
 	if ( symbol ) return onDemandSymbol( symbol, s );
 	return undefined;
-}
+};
 
 exports.resolve = function( s, symbol, ctx ) {
 	var i;
@@ -81,7 +81,7 @@ exports.resolve = function( s, symbol, ctx ) {
 		}
 	}
 	return s;
-}
+};
 
 exports.object = function( o, r ) {
 	if ( Array.isArray( o ) ) {
@@ -111,7 +111,51 @@ exports.object = function( o, r ) {
 		if ( r ) return exports.resolve( o, r.symbol, r.ctx );
 	}
 	return o;
+};
+
+function
+lock( mutex, f )
+{
+	if ( mutex.lock ) {
+		var stack = mutex.stack;
+		if ( stack === undefined ) {
+			mutex.stack = [ f ];
+		} else {
+			stack.push( f );
+		}
+	} else {
+		mutex.lock = true;
+		f();
+	}
 }
+
+function
+unlock( mutex, f )
+{
+	var stack = mutex.stack;
+	if ( stack && stack.length > 0 ) {
+		stack.pop()();
+	} else {
+		mutex.lock = false;
+	}
+}
+
+var prevTime;
+var uniqueTimeMutex = {};
+
+exports.uniqueTime = function( callback ) {
+	(function wait(t) {
+		setTimeout( function() {
+			var now = Date.now();
+			if ( now === prevTime ) {
+				wait( 1 );
+			} else {
+				prevTime = now;
+				callback( now );
+			}
+		}, t );
+	})();
+};
 
 exports.stage = function ( config, url, ctx ) {
 	var stage;
@@ -136,7 +180,7 @@ exports.stage = function ( config, url, ctx ) {
 		break;
 	}
 	return stage;
-}
+};
 
 // ctx : { i(in out), part(out) }
 function
@@ -341,7 +385,42 @@ exports.run = function(api,basepath,param) {
 	app.all('*', dispatch );
 	listener = app;
 	*/	// XXX testing now
-		http.createServer( listener ).listen( 3000 );
+		var port;
+		var client;
+		do {
+			if ( param ) {
+				client = param.client;
+				port = param.port;
+				if ( port ) break;
+			}
+			port = 3000;
+		} while ( 0 );
+
+		var server = http.createServer( listener ).listen( port );
+
+		if ( client ) {
+			server.client = {};
+			server.on( "connection", function(socket) {
+				var id = exports.uniqueTime( function( id ) {
+					socket.id = id;
+					server.client[id] = socket;
+					socket.on( "close", function() {
+						delete server.client[id];
+					});
+				} );
+			} );
+
+		}
+
+		return server;
+	}
+};
+
+exports.close = function( server ) {
+	server.close();
+	var client = server.client;
+	for ( var c in client ) {
+		client[c].destroy();
 	}
 }
 
@@ -359,7 +438,7 @@ exports.load = function( file, param ) {
 }
 	}
 	return module;
-}
+};
 
 // return 0 if no problem
 // -1 if module not found
@@ -391,8 +470,11 @@ exports.main = function(name,param) {
 						param.parse(input,function(pause) {
 							if ( pause === false )
 								interactive();
-							else if ( !pause )
+							else if ( !pause ) {
 								rl.close();
+								var fin = param.finalize;
+								if ( fin ) fin();
+							}
 							state = true;
 						});
 					} catch ( e ) {
@@ -406,23 +488,25 @@ exports.main = function(name,param) {
 	}
 	if ( !run ) run = exports.run;
 
+	var r;
 	const cwd = process.cwd()
 	const file = cwd + "/" + name;
 	try {
 		var api = exports.load( file );
 		if ( api === undefined ) return undefined;
-		run( api, cwd, param );
-		return 0;
+		r = run( api, cwd, param );
 	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" )
-			run( null, cwd, param );
-		else {
+		if ( e.code === "MODULE_NOT_FOUND" ) {
+			r = run( null, cwd, param );
+		} else {
 		//	require( file ); // raise exception again to know datails
 console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
+			return undefined;
 		}
 	}
-	return 0;
-}
+	if ( r !== undefined ) return r;
+	return true;
+};
 
 if ( exports.main( "api" ) === undefined )
 	console.log( "No body in api.js" );
