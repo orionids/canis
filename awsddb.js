@@ -1,4 +1,5 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (c) 2018, adaptiveflow
 // Distributed under ISC
 
@@ -41,10 +42,9 @@ exports.primaryKeyQuery = function
 	}, callback );
 };
 
-exports.updateExpression = function
-	( param, action, state, name, value )
+function
+attr( param, name, value, valueName )
 {
-	var cmd;
 	var expr = "#" + name;
 	if ( param.ExpressionAttributeNames === undefined )
 		param.ExpressionAttributeNames = {};
@@ -52,8 +52,17 @@ exports.updateExpression = function
 	if ( value !== undefined ) {
 		if ( param.ExpressionAttributeValues === undefined )
 			param.ExpressionAttributeValues = {};
-		param.ExpressionAttributeValues[":" + name] = value;
+		param.ExpressionAttributeValues[":" +
+			(valueName? valueName : name )] = value;
 	}
+	return expr;
+}
+
+exports.updateExpression = function
+	( param, action, state, name, value )
+{
+	var cmd;
+	var expr = attr( param, name, value );
 	if ( action === state ) expr = "," + expr;
 	switch ( action ) {
 		case 0: cmd = "set"; expr += "=:" + name; break;
@@ -61,7 +70,7 @@ exports.updateExpression = function
 		case -1 : cmd = "delete"; expr += " :" + name; break;
 		default: cmd = "remove";
 	}
-	if ( action != state ) {
+	if ( action !== state ) {
 		if ( param.UpdateExpression === undefined )
 			param.UpdateExpression = cmd + expr;
 		else
@@ -70,6 +79,85 @@ exports.updateExpression = function
 		param.UpdateExpression += expr;
 	}
 	return action;
+};
+
+exports.putExpression = function
+	( param, action, state, name, value )
+{
+	param.Item[name] = value;
+};
+
+exports.conditionExpression = function( param, sync, action, unlock )
+{
+	var state;
+	var condexpr = "";
+	var comb = true;
+
+	function append( si ) {
+		switch ( si ) {
+			case "|":
+			condexpr += " OR ";
+			comb = true;
+			break;
+
+			case "(":
+			if ( comb === false ) condexpr += " AND "; // default
+			comb = true;
+			/* falls through */
+			case ")":
+			condexpr += si;
+			break;
+
+			default:
+			if ( comb === true ) comb = false;
+			else condexpr += " AND "; // default
+			var expr, value;
+			switch ( si.cond ) {
+				case "present":
+				expr = attr( param, si.name );
+				condexpr += "attribute_exists(" +
+					expr + ")";
+				break;
+				case "absent":
+				expr = attr( param, si.name );
+				condexpr += "attribute_not_exists(" +
+					expr + ")";
+				break;
+				case "lock":
+				if ( condexpr.length > 0 ) break;
+				if ( unlock ) {
+					state = exports[action]( param, null, undefined, si.name );
+					break;
+				}
+
+				comb = true;
+				append( { name: si.name, cond: "absent" } );
+				if ( si.timeout > 0 ) {
+					append( "|" );
+					value = Date.now();
+					append( { name: si.name, cond: "<", opd: "t", value: value - si.timeout } );
+				} else {
+					value = true;
+				}
+				state = exports[action]
+					( param, 0, undefined, si.name, value );
+				break;
+				default:
+				expr = attr( param,
+					si.name, si.value, si.opd );
+				condexpr += expr + si.cond + ":" + si.opd;
+			}
+		}
+	}
+
+	if ( Array.isArray(sync) ) {
+		for ( var i = 0; i < sync.length; i++ )
+			append( sync[i] );
+	} else {
+		append( sync );
+	}
+	if ( condexpr.length > 0 )	param.ConditionExpression = condexpr;
+	return state;
 };
 
 // delete queried result

@@ -1,40 +1,25 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (c) 2017, 2018 adaptiveflow
 // Distributed under ISC
 
-/*
-function
-resolveObject( server, o, symbol ) {
-	if ( Array.isArray( o ) ) {
-		for ( var i = 0; i < o.length; i++ ) {
-			if ( ( o[i] = resolveObject
-				( server, o[i], symbol ) ) === undefined )
-				return undefined;
-		}
-	} else switch ( typeof o ) {
-		case "string":
-		return server.resolve( o, symbol );
-		case "object":
-		for ( var p in o ) {
-			if ( (o[p] = resolveObject
-				( server, o[p], symbol )) === undefined )
-				return undefined;
-		}
-	}
-	return o;
-}*/
+"use strict";
+
+var object = require( "canis/object" );
 
 exports.override = function( target, source ) {
-	for ( s in source ) {
-		var sv = source[s];
-		if ( typeof sv === 'object' ) {
-			exports.override( target[s], sv );
-		} else {
-			target[s + "_orig"] = target[s];
-			target[s] = sv;
+	for ( var s in source ) {
+		if ( source.hasOwnProperty(s) ) {
+			var sv = source[s];
+			if ( typeof sv === 'object' ) {
+				exports.override( target[s], sv );
+			} else {
+				target[s + "_orig"] = target[s];
+				target[s] = sv;
+			}
 		}
 	}
-}
+};
 
 
 exports.https = function
@@ -47,28 +32,32 @@ exports.https = function
 	}
 	if ( httpreq === undefined ) httpreq = require( "canis/httpreq" );
 	if ( https === undefined ) https = require( "https" );
-	var r = server.object( request, {
+	var r = object.clone( request, {
 		symbol : symbol === undefined ?
-			[ process.env ] : symbol
+			[ process.env ] : symbol,
+		ctx : { loose: true }
 	} );
 	if( r ) {
 		r.path = basepath ? basepath + r.url : r.url;
-		httpreq( https, r, function( err, data ) {
+console.log(r);
+		httpreq( https, r, function( err, data, res ) {
 			if ( err ) console.log( err );else
+			response.writeHead( res.statusCode );
 			response.write( data );
 			response.end( data );
 		} );
 	}
 //XXX exception
-}
+};
 
 exports.local = function
 ( server, api, basepath, request, response, param ) {
 	var symbol;
 	if ( param ) symbol = param.symbol;
-	var r = server.object( request, {
+	var r = object.clone( request, {
 		symbol : symbol === undefined ?
-			[ process.env ] : symbol
+			[ process.env ] : symbol,
+		ctx : { loose: true }
 	} );
 	if( r ) {
 		r.on = function(n,f) {
@@ -79,11 +68,20 @@ exports.local = function
 				break;
 				case "end": f(); break;
 			}
-		}
+		};
 		return server.invoke( api, basepath, r, response, param );
 	}
 // XXX exception
-}
+};
+
+var callee = {
+	"local" : exports.local,
+	"https" : exports.https,
+};
+
+exports.callee = function (name ) {
+	return callee[name];
+};
 
 exports.iterate = function( target, symbol, callback,
 	server, api, basepath, request, response, param ) {
@@ -101,13 +99,13 @@ exports.iterate = function( target, symbol, callback,
 		callback( i, symbol.length );
 		if ( i < symbol.length ) {
 			e.symbol[0] = symbol[i++];
-			exports[target]( server, api, basepath,
+			callee[target]( server, api, basepath,
 				request, r, e );
 		}
 	}
 	var e = {};
 	for ( var p in param ) {
-		e[p] = param[p];
+		if ( param.hasOwnProperty(p) ) e[p] = param[p];
 	}
 
 	var s = e.symbol;
@@ -125,7 +123,7 @@ exports.iterate = function( target, symbol, callback,
 	i = 0;
 	if ( !symbol || symbol.length <= 0 ) symbol = [ null ];
 	perform();
-}
+};
 
 
 // EOF

@@ -1,4 +1,5 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (C) 2018, adaptiveflow
 // Distributed under ISC
 
@@ -10,27 +11,28 @@ exports.argv = function ( optionContext, action ) {
 		if ( i === undefined ) i = 2;
 		else i = i + 1;
 		ctx.i = i;
-		if ( i < ctx.argv.length ) return ctx.argv[i]
+		if ( i < ctx.argv.length ) return ctx.argv[i];
 	}
 	return null;
-} 
+}; 
 
 exports.help = function ( longOption, charOption ) {
 	var option = charOption;
 	for ( var i = 0; i < 2; i++ ) {
 		for ( var o in option ) {
-			console.log( o + " : " + option[o].comment );
+			if ( option.hasOwnProperty(o) )
+				console.log( o + " : " + option[o].comment );
 		}
 		option = longOption;
 	}
-}
+};
 
 // this function corresponds to stroptString in Coral library, but
 // no case to get partial string of the current arg because
 // that is passed to parameter of an option dispacher
 exports.next = function ( optionContext ) {
 	return optionContext.invoke( optionContext, 'next' );
-}
+};
 
 // simplified implementation of stropt in Coral library
 // indicator for char options is '-', and character options are combinated ( -xzvf )
@@ -45,29 +47,31 @@ exports.next = function ( optionContext ) {
 exports.parse = function
 	( optionContext, delimiter, longOption, charOption ) {
 	var arg;
-	while ( arg = this.next( optionContext ) ) {
+	while ( ( arg = this.next( optionContext ) ) ) {
 		var longNameIndex = 1;
 		if ( arg.charAt(0) == '-' ) {
+			var i;
+			var o;
 			if ( optionContext.singleIndicator ||
 				arg.charAt(longNameIndex++) == '-' ) {
 				if ( !longOption ) return undefined;
-				var i = arg.lastIndexOf( delimiter );
+				i = arg.lastIndexOf( delimiter );
 				var p;
 				if ( i > 0 ) {
 					p = arg.substring(i + 1);
 				} else {
 					i = undefined;
 				}
-				var o = longOption
+				o = longOption
 					[arg.substring(longNameIndex,i)];
 				if ( o === undefined ) return undefined;
 				if ( o.dispatch( p, optionContext ) ) return null;
 			} else {
 				if ( !charOption ) return undefined;
-				for (var i = 1;; i++) {
-					var o = arg.charAt(i);
+				for (i = 1;; i++) {
+					o = arg.charAt(i);
 					if ( o == '' ) break;
-					var o = charOption[o];
+					o = charOption[o];
 					if ( o === undefined ) return undefined;
 					if ( o.dispatch( undefined, optionContext ) ) return null;
 				}
@@ -77,5 +81,5 @@ exports.parse = function
 		}
 	}
 	return null;
-}
+};
 
