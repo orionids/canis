@@ -1,161 +1,12 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
-'use strict'
+"use strict";
+var string = require( "canis/string" );
+var object = require( "canis/object" );
 
-exports.symbol = function ( s, symbol ) {
-	function onDemandSymbol( sl, s ) {
-		var r = sl[s];
-		if ( r ) return r;
-		r = sl['?'];
-		if ( r instanceof Function ) {
-			var ctx = sl['??'];
-			return r( ctx? ctx : sl, s );
-		}
-		return undefined;
-	}
-
-	var resolved;
-	if ( Array.isArray(symbol) ) {
-		for ( var l = 0; l < symbol.length; l++ ) {
-			var sl = symbol[l];
-			if ( sl ) {
-				resolved = onDemandSymbol( sl, s );
-				// exclude both null and undefined
-				if ( resolved != null ) return resolved;
-			}
-		}
-		return undefined;
-	}
-	if ( symbol ) return onDemandSymbol( symbol, s );
-	return undefined;
-};
-
-exports.resolve = function( s, symbol, ctx ) {
-	var i;
-	var delim;
-	function replace( resolved, end ) {
-		s = s.substring( 0, i ) + resolved +
-			s.substring( end + delim.close.length );
-	}
-	for (;;) {
-		if ( ctx ) {
-			i = ctx.i;
-			delim = ctx.delim;
-			if ( delim ) break;
-		} else {
-			ctx = {};
-			i = 0;
-		}
-		ctx.delim = delim = {
-			open: "[", close: "]", escape: "\\",
-		}
-		break;
-	}
-
-	if ( ctx.resolved !== undefined ) {
-		replace( ctx.resolved, ctx.end );
-	}
-
-	if ( s === undefined ) return "";
-	while ( ( i = s.indexOf( delim.open, i ) ) >= 0 ) {
-		var prev = i - 1;
-		var next = i + delim.open.length;
-		if ( s.charAt(prev) === delim.escape ) {
-			s = s.substring( 0, prev ) + s.substring( i );
-		} else {
-			var end = s.indexOf( delim.close, next );
-			if ( end < 0 ) return null;
-			var sym = s.substring( next, end );
-			var resolved = exports.symbol( sym, symbol );
-			if ( resolved === undefined ) {
-				ctx.i = i;
-				ctx.end = end;
-				ctx.s = s;
-				ctx.symbol = sym;
-				ctx.resolved = undefined;
-				return undefined;
-			}
-			replace( resolved, end );
-		}
-	}
-	return s;
-};
-
-exports.object = function( o, r ) {
-	if ( Array.isArray( o ) ) {
-		var newa = new Array(o.length);
-		for ( var i = 0; i < o.length; i++ ) {
-			var oi = o[i];
-			if ( oi !== undefined ) {
-				if ( ( newa[i] = exports.object
-					( oi, r ) ) === undefined )
-					return undefined;
-			}
-		}
-		return newa;
-	} else switch ( typeof o ) {
-		case "object":
-		var newo = {}; 
-		for ( var p in o ) {
-			var op = o[p];
-			if ( op !== undefined ) {
-				if ( (newo[p] = exports.object
-					( o[p], r )) === undefined )
-					return undefined;
-			}
-		}
-		return newo;
-		case "string":
-		if ( r ) return exports.resolve( o, r.symbol, r.ctx );
-	}
-	return o;
-};
-
-function
-lock( mutex, f )
-{
-	if ( mutex.lock ) {
-		var stack = mutex.stack;
-		if ( stack === undefined ) {
-			mutex.stack = [ f ];
-		} else {
-			stack.push( f );
-		}
-	} else {
-		mutex.lock = true;
-		f();
-	}
-}
-
-function
-unlock( mutex, f )
-{
-	var stack = mutex.stack;
-	if ( stack && stack.length > 0 ) {
-		stack.pop()();
-	} else {
-		mutex.lock = false;
-	}
-}
-
-var prevTime;
-var uniqueTimeMutex = {};
-
-exports.uniqueTime = function( callback ) {
-	(function wait(t) {
-		setTimeout( function() {
-			var now = Date.now();
-			if ( now === prevTime ) {
-				wait( 1 );
-			} else {
-				prevTime = now;
-				callback( now );
-			}
-		}, t );
-	})();
-};
 
 exports.stage = function ( config, url, ctx ) {
 	var stage;
@@ -200,9 +51,10 @@ invoke(api,basepath,request,response,param) {
 
 	// match API
 	var url = request.url;
+	if ( !url ) return;
 	var ctx = {};
 	var a;
-	var ev = {}
+	var ev = {};
 	var config = api.configuration;
 	if ( config === undefined ) config = {};
 	if ( exports.stage( config, url, ctx ) === undefined ) {
@@ -253,7 +105,7 @@ invoke(api,basepath,request,response,param) {
 						api["?"] = {
 							name: name,
 							child: a
-						}
+						};
 						break;
 					}
 				}
@@ -371,11 +223,11 @@ exports.match = match;
 exports.invoke = invoke;
 
 exports.run = function(api,basepath,param) {
-	if ( api ) {
-		function dispatch( request, response ) {
-			invoke( api, basepath, request, response, param );
-		}
+	function dispatch( request, response ) {
+		invoke( api, basepath, request, response, param );
+	}
 
+	if ( api ) {
 		const http = require( "http" );
 
 		var listener = dispatch;
@@ -401,7 +253,7 @@ exports.run = function(api,basepath,param) {
 		if ( client ) {
 			server.client = {};
 			server.on( "connection", function(socket) {
-				var id = exports.uniqueTime( function( id ) {
+				string.unique( function( id ) {
 					socket.id = id;
 					server.client[id] = socket;
 					socket.on( "close", function() {
@@ -420,24 +272,9 @@ exports.close = function( server ) {
 	server.close();
 	var client = server.client;
 	for ( var c in client ) {
-		client[c].destroy();
+		if ( client.hasOwnProperty(c) )
+			client[c].destroy();
 	}
-}
-
-// __dirname + "/" + relpath to use relative path
-// like 'require' in an arbitrary module
-const path = require( "path" );
-exports.load = function( file, param ) {
-	var module = require( file );
-	if ( path.extname( require.resolve( file ) ) == ".js" ) {
-		module = module.body;
-		if ( module === undefined ) return undefined;
-		if ( typeof module === "function" ) {
-			return module.apply( this, param );
-
-}
-	}
-	return module;
 };
 
 // return 0 if no problem
@@ -463,7 +300,7 @@ exports.main = function(name,param) {
 				output: process.stdout
 			});
 			(function interactive() {
-				var p = param.prompt
+				var p = param.prompt;
 				rl.question(p? p : "> ", function (input) {
 					var state;
 					try {
@@ -489,10 +326,10 @@ exports.main = function(name,param) {
 	if ( !run ) run = exports.run;
 
 	var r;
-	const cwd = process.cwd()
+	const cwd = process.cwd();
 	const file = cwd + "/" + name;
 	try {
-		var api = exports.load( file );
+		var api = object.load( file );
 		if ( api === undefined ) return undefined;
 		r = run( api, cwd, param );
 	} catch ( e ) {

@@ -1,11 +1,11 @@
-var server = require( "canis/server" );
+var string = require( "canis/string" );
 
 var prev;
 
 function
 unique(n)
 {
-	server.uniqueTime( function ( id ) {
+	string.unique( function ( id ) {
 		console.log( id );
 		if ( n-- > 0 ) unique( n );
 	} );

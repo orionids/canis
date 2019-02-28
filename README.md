@@ -10,7 +10,7 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.3.2
+## New features in 0.1.0 to 0.3.3
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 		- property names begin with ^ or /^ are excluded from auto generation
@@ -39,11 +39,14 @@ So Canis is a part of Orion project and will support :
 	- storage.js
 		- to support various storage access using compatible functions
 		- Memory DB to simulate specific storage state using compatible API
+		- Compatible synchronization method
+	- object.js, string.js : some utility functions related to objects & strings
 
 ## Known todo list
 - Static files
 - https support
 - Done(0.3.2) : An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
+- Conditional storage operation compatible to AWS DynamoDB
 - User account support using popular frameworks
 - Interoperability with Orion project
 
