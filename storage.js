@@ -1,10 +1,45 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (c) 2018, adaptiveflow
+// adaptiveflow@gmail.com
 // Distributed under ISC
 
 'use strict';
 
-var server = require( "canis/server" );
+var object = require( "canis/object" );
+
+function
+getStorageContext( context, tblpref, name, callback ) {
+	if ( typeof tblpref === "string" )
+		return tblpref + name;
+	if ( tblpref === null ) return name;
+	var s;
+	var storage = context._entity._storage;
+	var mname = tblpref.name;
+	if ( storage === undefined ) {
+		storage = context._entity._storage = {};
+	} else {
+		s = storage[mname];
+		if ( s !== undefined ) {
+			callback( null, s, name);
+			return;
+		}
+	}
+	var i = mname.indexOf(".");
+	s = {
+		m : require( "canis/" +
+			( i > 0 ? mname.substring( 0, i ) : mname ) )
+	};
+	s.m.initialize( tblpref, function ( err, c ) {
+		s.c = c;
+		storage[mname] = s;
+		if ( err ) {
+			callback(err);
+		} else {
+			callback( null, s, mname );
+		}
+	} );
+}
 
 function
 searchSortKey( p, keyname, key ) 
@@ -20,23 +55,12 @@ searchSortKey( p, keyname, key )
 	return -l - 1;
 }
 
-function
-insertSortKey( p, keyname, key )
-{
-	var i = searchSortKey( p, keyname, key );
-	if ( i < 0 ) {
-		i = -i - 1;
-		p.splice( i, 0, null );
-	}
-	return i;
-}
-
 exports.getIndexName = function(key)
 {
 	var index = key.index;
 	return index? typeof index === "string" ? index :
 			key.p + "-index" : undefined;
-}
+};
 
 
 exports.query = function
@@ -50,7 +74,7 @@ exports.query = function
 			if ( sval != null ) {
 				switch ( key.cond ) {
 					default:
-throw new Error( "Unexpected operator " + cond );
+throw new Error( "Unexpected operator " + key.cond );
 					case null:
 					case undefined:
 					return sval.startsWith( key.sval );
@@ -66,15 +90,23 @@ throw new Error( "Unexpected operator " + cond );
 		return false;
 	}
 	if ( tblpref !== undefined ) {
-		if ( key.s === undefined || key.sval === undefined ) {
-			require( "canis/awsddb" ).partitionKeyQuery
-			( this, context, tblpref? tblpref + name : name,
-			key, callback );
-		} else {
-			require( "canis/awsddb" ).primaryKeyQuery
-			( context.ddbcli(), tblpref? tblpref + name : name,
-			key.p, key.pval, key.s, key.sval,
-			key.extra, key.cond, callback );
+		name = getStorageContext( context, tblpref, name,
+		function (err,s, name) {
+			if ( err ) callback(err);
+			else s.m.query( s.c, context, tblpref, name,
+				key, callback );
+		} );
+		if ( name ) {
+			if ( key.s === undefined ||
+				key.sval === undefined ) {
+				require( "canis/awsddb" ).partitionKeyQuery
+				( this, context, name, key, callback );
+			} else {
+				require( "canis/awsddb" ).primaryKeyQuery
+				( context.ddbcli(), name,
+				key.p, key.pval, key.s, key.sval,
+				key.extra, key.cond, callback );
+			}
 		}
 	} else {
 		var invoke = require("canis/invoke");
@@ -106,7 +138,7 @@ throw new Error( "Unexpected operator " + cond );
 					for ( var i = 0; i < data.length; i++ ) {
 						var di = data[i];
 						if ( checkSortKey(di) ) {
-							di = server.object(di);
+							di = object.clone(di);
 							if ( item ) item.push( di );
 							else item = [ di ];
 							cnt++;
@@ -114,9 +146,10 @@ throw new Error( "Unexpected operator " + cond );
 					}
 				} else if ( checkSortKey(data) ) {
 					cnt = 1;
-					item = [ server.object(data) ];
+					item = [ object.clone(data) ];
 				} else {
 					cnt = 0;
+					item = [];
 				}
 				callback( null, {
 					Items: item,
@@ -128,20 +161,113 @@ throw new Error( "Unexpected operator " + cond );
 	}
 };
 
+
+// body and expr are exclusive, if body is empty
+// expr contains update instructions, vice versa
 function
-put( context, name, key, body, callback, expr )
+put( context, name, key, body, unlock, callback, expr )
 {
+	var mutex;
+	function synchronize( sync, prev ) {
+		if ( !sync ) return true;
+
+		var result;
+		var or = true;
+		function append( si ) {
+			// TODO: parenthesis is not implemented yet
+			if ( si === "|" ) {
+				or = true;
+			} else {
+				if ( or ) {
+					if ( result ) return true;
+					or = false;
+				} else {
+					if ( !result ) return true;
+				}
+
+				var value = prev ? prev[si.name] : undefined;
+				switch ( si.cond ) {
+					case "absent":
+					result = value === undefined ?
+						true : false;
+					break;
+					case "present":
+					result = value === undefined ?
+						false : true;
+					break;
+					case "lock":
+					if ( unlock ) {
+						mutex = si.name;
+						result = true;
+					} else if ( result === undefined ) {
+						var m;
+						if ( value === undefined ) {
+							result = true;
+							// si.timeout > 0 includes
+							// si.timeout !== undefined
+							m = si.timeout > 0 ?
+								Date.now() : true;
+						} else {
+							for (;;) {
+								if ( si.timeout > 0 ) {
+									m = Date.now();
+									if ( value <
+										m - si.timeout ) {
+										result = true;
+										break;
+									}
+								}
+								result = false;
+								return true;
+							}
+						}
+						if ( expr )
+							mutex = {
+								name: si.name, value: m
+							};
+						else
+							body[si.name] = m;
+					}
+					break;
+					case "<":
+					result = value < si.value;
+				}
+			}
+		}
+
+		if ( Array.isArray(sync) ) {
+			for ( var i = 0; i < sync.length; i++ )
+				if ( append( sync[i] ) ) break;
+		} else {
+			append( sync );
+		}
+
+		if ( !result ) {
+			callback( {
+				code: "ConditionalCheckFailedException"
+			} );
+		}
+		return result;
+	}
+
 	function merge( prev ) {
+		if ( typeof mutex === "object" ) prev[mutex.name] = mutex.value;
+
 // XXX only set and remove operation is defined now
 		if ( Array.isArray(expr) ) {
 			var action = 0;
 			for ( var i = 0; i < expr.length; i ++ ) {
 				var e = expr[i];
-				if ( typeof e === "object" ) {
+				// prevent null, so null can be used to
+				// specify removal
+				if ( e !== null && typeof e === "object" ) {
 					switch ( action ) {
+						case undefined: break;
 						case 0:
 						prev[e.name] = e.value;
 						break;
+						case 1: break;
+						case -1: break;
 						default:
 						delete prev[e.name];
 					}
@@ -152,65 +278,84 @@ put( context, name, key, body, callback, expr )
 		} else if ( typeof expr === "object" ) {
 			prev[expr.name] = expr.value;
 		}
+		if ( unlock ) delete prev[mutex];
+		return true;
 	}
 
 	var invoke = require("canis/invoke");
 	invoke( context, name, null, invoke.DISABLE_REMOTE,
 	function( err, data ) {
-		if ( err ) {
-			callback(err);
-		} else {
-			body = server.object( body );
-			body[key.p] = key.pval;
-			function store( table, body, key ) {
-				do {
-					var prev = table[key.pval];
-					if ( key.s ) {
-						body[key.s] = key.sval;
-						if ( prev !== undefined ) {
-							if ( !Array.isArray(prev) ) {
-								prev = [ prev ];
-								table[key.pval] = prev;
-							}
-							var i = insertSortKey
-								( prev, key.s, key.sval );
-							var pi = prev[i];
-							if ( expr ) {
-								if ( pi ) {
-									merge( pi );
-									break;
-								}
-								merge( body );
-							}
-							prev[i] = body;
-							break;
-						}
-					} else if ( expr ) {
-						if ( prev ) {
-							merge( prev );
-							break;
+		function store( table, body, key, sync ) {
+			var prev = table[key.pval];
+			if ( key.s ) {
+				body[key.s] = key.sval;
+				if ( prev !== undefined ) {
+					if ( !Array.isArray(prev) ) {
+						prev = [ prev ];
+						table[key.pval] = prev;
+					}
+
+					var i = searchSortKey
+						( prev, key.s, key.sval );
+					if ( !synchronize( sync, prev[i] ) )
+						return;
+
+					if ( i < 0 ) {
+						i = -i - 1;
+						prev.splice( i, 0, null );
+					}
+					if ( expr ) {
+						var pi = prev[i];
+						if ( pi ) {
+							merge( pi );
+							return true;
 						}
 						merge( body );
 					}
-					table[key.pval] = body;
-				} while(0);
+					prev[i] = body;
+					return true;
+				}
+				/* if here, there is no previous item,
+				  so share below routine though if ( prev )
+				  is evaluated twice */
 			}
 
-			store( data, body, key );
-
-			// global secondary index
-			var index = data["~index"];
-			for ( var p in index ) {
-				var i = index[p];
-				if ( !i.table ) i.table = {};
-				var p = i.key.p;
-				var s = i.key.s;
-				store( i.table, body, {
-					p: p, pval: body[p],
-					s: s, sval: body[s],
-				} );
+			if ( !synchronize( sync, prev ) ) return;
+			if ( expr ) {
+				if ( prev ) {
+					merge( prev );
+					return true;
+				}
+				merge( body );
 			}
-			callback();
+			table[key.pval] = body;
+			return true;
+		}
+
+		if ( err ) {
+			callback(err);
+		} else {
+			body = object.clone( body );
+			body[key.p] = key.pval;
+
+			if ( store( data, body, key, key.sync ) ) {
+				// global secondary index
+				var index = data["~index"];
+				for ( var prop in index ) {
+					if ( index.hasOwnProperty(prop) ) {
+						var i = index[prop];
+						if ( !i.table ) i.table = {};
+						var p = i.key.p;
+						var s = i.key.s;
+						store( i.table, body, {
+							p: p, pval: body[p],
+							s: s, sval: body[s],
+						} );
+					}
+				}
+///// XXX unlock here if mutex between process is needed
+				callback();
+			}
 		}
 	} );
 }
@@ -218,41 +363,91 @@ put( context, name, key, body, callback, expr )
 exports.put = function( context, tblpref, name,
 	key, body, callback )
 {
+	var unlock;
+	if ( typeof body === "function" ) {
+		callback = body;
+		body = undefined;
+	} else if ( Array.isArray(body) ) {
+		unlock = true;
+		body = body[0] === undefined ? body[1] : body[0];
+	}
+
 	if ( tblpref !== undefined ) {
-		var item = {};
-		item[key.p] = key.pval;
-		if ( key.s ) item[key.s] = key.sval;
-		Object.assign( item, body );
-		var param = {
-			TableName: tblpref? tblpref + name : name,
-			Item: item
-		};
-		context.ddbcli().put( param, callback );
+		name = getStorageContext( context, tblpref, name,
+		function (err,s,name) {
+			if ( err ) callback(err);
+			else s.m.put( s.c, context, tblpref, name,
+				key, body, unlock, callback );
+		} );
+		if ( name ) {
+			var item = {};
+			item[key.p] = key.pval;
+			if ( key.s ) item[key.s] = key.sval;
+			Object.assign( item, body );
+			var param = {
+				TableName: name,
+				Item: item
+			};
+			if ( key.sync && !unlock ) {
+				require("canis/awsddb").conditionExpression
+					( param, key.sync, "putExpression" );
+			}
+			context.ddbcli().put( param, callback );
+		}
 	} else {
-		put( context, name, key, body, callback );
+		put( context, name, key, body, false, callback );
 	}
 };
 
 exports.update = function( context, tblpref, name,
 	key, expr, callback )
 {
+	var i, unlock;
+	if ( typeof expr === "function" ) {
+		callback = expr;
+		expr = undefined;
+	} else {
+		if ( Array.isArray(expr) ) {
+			if ( expr[0] === undefined ) {
+				unlock = true;
+				i = 1;
+			} else {
+				i = 0;
+			}
+		}
+	}
+
 	if ( tblpref !== undefined ) {
+		name = getStorageContext( context, tblpref, name,
+		function (err,s,name) {
+			if ( err ) callback(err);
+			else s.m.put( s.c, context, tblpref, name,
+				key, undefined, unlock, callback, expr );
+		} );
+		if ( name === undefined ) return;
+
+		var awsddb = require( "canis/awsddb" );
 		var Key = {};
 		Key[key.p] = key.pval;
 		if ( key.s ) Key[key.s] = key.sval;
 		var param = {
-			TableName: tblpref? tblpref + name : name,
+			TableName: name,
 			Key: Key
 		};
+		var state;
+		if ( key.sync )
+			state = awsddb.conditionExpression
+				( param, key.sync, "updateExpression", unlock );
+
 		if ( Array.isArray(expr) ) {
-			var state;
 			var action = 0;
-			for ( var i = 0; i < expr.length; i ++ ) {
-				var e = expr[i];
-				if ( typeof e === "object" ) {
-					state = require( "canis/awsddb" ).
-						updateExpression( param, action,
-							state, e.name, e.value );
+			while ( i < expr.length ) {
+				var e = expr[i++];
+				// prevent null, so null can be used to
+				// specify removal
+				if ( e !== null && typeof e === "object" ) {
+					state = awsddb.updateExpression
+					( param, action, state, e.name, e.value );
 				} else {
 					action = e;
 				}
@@ -260,14 +455,19 @@ exports.update = function( context, tblpref, name,
 			// don't do this, key only item can be saved
 			//if ( state === undefined ) break;
 		} else if ( typeof expr === "object" ) {
-			require( "canis/awsddb" ).updateExpression
-			( param, 0, undefined, expr.name, expr.value );
+			awsddb.updateExpression
+			( param, 0, state, expr.name, expr.value );
 		}
 		context.ddbcli().update( param, callback );
 	} else {
-		put( context, name, key, {}, callback, expr );
+		// expr can be undefined if mutex is supplied,
+		// because mutex automatically appends required
+		// expressions for mutex, so explicit empty expr is used
+		// to distinguish put and update
+		put( context, name, key, {}, unlock, callback,
+			expr ? expr : [] );
 	}
-}
+};
 
 // common: p, s
 // to delete queried result: queried, cond
@@ -276,110 +476,147 @@ exports.update = function( context, tblpref, name,
 exports.delete = function
 	( context, tblpref, name, key, callback )
 {
-	var item;
-	var i, cnt;
-	var cond;
-	var queried = key.queried;
-	if ( queried ) {
-		item = queried.Items;
-		cnt = queried.Count;
-		cond = key.cond;
-	}
-
-	if ( tblpref !== undefined ) {
-		var param = {
-			TableName: tblpref? tblpref + name : name,
-			Key: {}
-		};
-		function delItem( pval, sval, done ) {
-			param.Key[key.p] = pval;
-			if ( key.s ) param.Key[key.s] = sval;
-			context.ddbcli().delete( param, done );
-		}
+	function del( delItem, loop ) {
+		var queried = key.queried;
 		if ( queried ) {
-			i = 0;
-			(function del(e,d) {
-				do {
+			var item = queried.Items;
+			var cnt = queried.Count;
+			var cond = key.cond;
+			var i = 0;
+			return (function delQueried(e,d) {
+				for (;;) {
 					if ( i < cnt ) {
 						var di = item[i++];
 						if ( cond && !cond(di) ) continue;
-						delItem( di[key.p], di[key.s], del );
-					} else {
-						callback( e, d);
+						if ( delItem( di[key.p], di[key.s],
+							delQueried ) ) return true;
+						if ( loop ) continue;
+						return;
 					}
-				} while( 0 );
-			})();
-		} else {
-			delItem( key.pval, key.sval, callback );
-			return;
-		}
-	} else {
-		function delMemoryItem( data, pval, sval ) {
-			do {
-				var p = data[pval];
-				if ( p ) {
-					if ( key.s === undefined ) break;
-					if ( sval === undefined ) {
-						callback( new Error( "SortKeyNeeded" ) );
-						return true;
-					}
-
-					if ( Array.isArray(p) ) {
-						var i = searchSortKey
-							( p, key.s, sval );
-						if ( i >= 0 ) {
-							p.splice( i, 1 );
-							return;
-						}
-					} else {
-						if ( p[key.s] === sval ) break;
-					}
+					callback( e, d);
+					return true;
 				}
-				callback( new Error( "NoSuchItem" ) );
-				return true;
-			} while ( 0 );
-			// current memorydb implementation
-			// cannot determine this case
-			// requires sort key
-			delete data[pval];
+			})();
 		}
-		var invoke = require("canis/invoke");
-		invoke( context, name, null, invoke.DISABLE_REMOTE,
-		function( err, data ) {
-			var val;
+		return delItem( key.pval, key.sval, callback );
+	}
+
+	// impl
+	if ( tblpref !== undefined ) {
+		name = getStorageContext( context, tblpref, name,
+		function (err,s, name) {
 			if ( err ) {
 				callback(err);
 			} else {
-				if ( queried ) {
-					for ( i = 0; i < cnt; i++ ) {
-						var qi = item[i];
-						if ( !cond || cond(qi) ) {
-							if ( delMemoryItem( data,
-								qi[key.p], qi[key.s] ) )
-								return;
+				del( function (pval,sval,done) {
+					s.m.delete( s.c, context, tblpref, name,
+					{ p: key.p, pval: pval,
+						s: key.s, sval: sval }, done );
+				} );
+			}
+		} );
+		if ( name === undefined ) return;
+		var param = {
+			TableName: name,
+			Key: {}
+		};
+		del( function( pval, sval, done ) {
+			param.Key[key.p] = pval;
+			if ( key.s ) param.Key[key.s] = sval;
+			context.ddbcli().delete( param, done );
+		} );
+	} else {
+		var invoke = require("canis/invoke");
+		invoke( context, name, null, invoke.DISABLE_REMOTE,
+		function( err, data ) {
+			if ( err ) {
+				callback(err);
+			} else {
+				if ( !del(
+				function(pval,sval) {
+					do {
+						var p = data[pval];
+						if ( p ) {
+							if ( key.s === undefined )
+								break;
+							if ( sval === undefined ) {
+								callback( new Error
+									( "SortKeyNeeded" ) );
+								return true;
+							}
+
+							if ( Array.isArray(p) ) {
+								var i = searchSortKey
+									( p, key.s, sval );
+								if ( i >= 0 ) {
+									p.splice( i, 1 );
+									return;
+								}
+							} else {
+								if ( p[key.s] === sval )
+									break;
+							}
 						}
-					}
-				} else {
-					if ( delMemoryItem
-						( data, key.pval, key.sval ) )
-						return;
-				}
-				callback();
+						callback( new Error
+							( "NoSuchItem" ) );
+						return true;
+					} while ( 0 );
+					// current memorydb implementation
+					// cannot determine this case
+					// requires sort key
+					delete data[pval];
+				}, true ) )
+					callback();
 			}
 		} );
 	}
 };
 
+exports.retry = function( err, retry, timeout ) {
+	if ( err.code == "ConditionalCheckFailedException" ) {
+		setTimeout( retry, timeout );
+		return true;
+	}
+};
+
+exports.finalize = function( context )
+{
+	var storage = context._entity._storage;
+	for ( var name in storage ) {
+		if ( storage.hasOwnProperty(name) ) {
+			var s = storage[name];
+			s.m.finalize( s.c );
+		}
+	}
+};
+
+// lock can be done by both put and update
+// but unlock is not, so separate function is defined
+/*exports.unlock = function
+	( context, tblpref, name, key, callback )
+{
+	// delete key.lock column or call storage.delete
+	// to remove mutex
+	var sync = key.sync;
+	if ( sync ) {
+		exports.update( context, tblpref, name, key,
+			[ undefined, null, { name: sync.name } ], callback );
+	} else {
+		exports.delete
+			( context, tblpref, name, key, callback );
+	}
+};*/
+
 exports.snapshot = function
 	( context, tblpref, name, path, callback )
 {
 	if ( tblpref !== undefined ) {
+		name = name; /* XXX */
 	} else {
 		var invoke = require("canis/invoke");
 		invoke( context, name,
 		null, invoke.DISABLE_REMOTE,
 		function( err, data ) {
-			var val;
 			if ( err ) {
 				callback(err);
 			} else {
@@ -402,6 +639,7 @@ exports.snapshot = function
 			}
 		} );
 	}
-}
+};
+
 
 // EOF

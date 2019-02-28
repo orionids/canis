@@ -1,10 +1,10 @@
 {
   "name": "canis",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Node.js based RESTful web service for Orion project",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node test/run.js",
     "start": "node server.js"
   },
   "repository": {

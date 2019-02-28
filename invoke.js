@@ -1,10 +1,11 @@
 // vim:ts=4 sw=4:
+// jshint curly:false
 // Copyright (C) 2018, adaptiveflow
 // Distributed under ISC License
 'use strict';
 
 module.exports =
-	function ( context, name, param, flag, callback ) {
+function ( context, name, param, flag, callback ) {
 	function invokeLocal ( prefix ) {
 		try {
 			var l = require( prefix + name );
@@ -22,8 +23,12 @@ module.exports =
 		}
 	}
 
+	var f = context.getProperty( "canis_invoke" );
+	if ( f !== undefined ) flag = f;
+
+	var prefix;
 	if ( !(flag & module.exports.DISABLE_LOCAL) ) {
-		var prefix = context.localPrefix;
+		prefix = context.localPrefix;
 		if ( prefix ) {
 			if ( Array.isArray(prefix) ) {
 				for ( var i = 0; i < prefix.length; i++ )
@@ -58,7 +63,7 @@ module.exports =
 	} else {
 		callback( { code: "ResourceNotFoundException" } );
 	}
-}
+};
 
 module.exports.DISABLE_LOCAL = 0x1;
 module.exports.DISABLE_REMOTE = 0x2;

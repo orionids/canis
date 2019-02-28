@@ -1,4 +1,9 @@
-'use strict'
+// vim:ts=4 sw=4:
+// jshint curly:false
+// Copyright (C) 2017, adaptiveflow
+// Distributed under ISC License
+
+"use strict";
 function recoverConfig(aws) {
 	if ( aws ) {
 		var region = process.env.AWS_DEFAULT_REGION;
@@ -12,9 +17,12 @@ exports.recover = recoverConfig;
 exports.initialize = function(aws) {
 	if ( !aws ) {
 		var awssdk = process.env.AWS_SDK;
-		aws = require(  awssdk === undefined ?
-			'aws-sdk' : awssdk );
+		try {
+			aws = require(  awssdk === undefined ?
+				'aws-sdk' : awssdk );
+		} catch (e) {
+		}
 	}
 	recoverConfig(aws);
 	return aws;
-}
+};
