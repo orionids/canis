@@ -1,10 +1,12 @@
 // vim:ts=4 sw=4:
+// jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
-'use strict'
+"use strict";
 exports.iterator = require( "canis/iterator" );
 var server = require( "canis/server" );
+var string = require( "canis/string" );
 const awssdk = require( "canis/awssdk" );
 
 exports.PATH = 0;
@@ -37,7 +39,7 @@ callAWSAPI( iter, instance, name, param, callback ) {
 
 function
 retryAWSAPI( iter, err ) {
-	if ( err.code == 'TooManyRequestsException' ) {
+	if ( err.code == "TooManyRequestsException" ) {
 		console.log( "- Retry by TooManyRequestsException" );
 		const prevCall = iter.prevCall;
 		setTimeout( function() {
@@ -56,10 +58,11 @@ function CanisError( code, message ) {
 CanisError.prototype = new Error();
 CanisError.prototype.constructor = CanisError;
 exports.getAPISet = function( iter, name, symbol, f ) {
-	var resolved = server.resolve( name, symbol );
+	var resolved = string.resolve( name, symbol );
 	callAWSAPI( iter, apigw, "getRestApis", null, function ( err, data ) {
 		if ( err == null ) {
-			var found = data.items.find( (i) => { return i.name == resolved } );
+			var found = data.items.find
+				( (i) => { return i.name == resolved; } );
 			if ( found ) {
 				f( null, found );
 			} else {
@@ -71,7 +74,7 @@ exports.getAPISet = function( iter, name, symbol, f ) {
 		}
 	} );
 	return resolved;
-}
+};
 
 
 exports.removeAPISet = function( iter, name, symbol, f ) {
@@ -92,152 +95,151 @@ exports.removeAPISet = function( iter, name, symbol, f ) {
 		callAWSAPI( iter, apigw, "deleteRestApi",
 			{ restApiId: name.id }, callback );
 	}
-}
+};
 
 
 function
 createMethod( iter, method, info, res, callback ) {
-	var apikeyRequired = info["apiKeyRequired"];
+	var apiKeyRequired = info["apiKeyRequired"];
 	callAWSAPI( iter, apigw, "putMethod", {
 		authorizationType: "NONE", // XXX
-		apiKeyRequired : apikeyRequired === undefined ?
+		apiKeyRequired : apiKeyRequired === undefined ?
 			iter.config["apiKeyRequired"] : apiKeyRequired,
 		httpMethod: method,
 		restApiId: iter.restapi.id,
 		resourceId: res
-	}, function ( err, data ) {
-		if ( err == null ) {
-			var gwregion = info["aws-gatewayRegion"];
-			if ( gwregion === undefined )
-				gwregion = iter.config["aws-gatewayRegion"]; // XXX if still undefined?
-			var lregion = info["aws-lambdaRegion"];
-			if ( lregion === undefined ) {
-				lregion = iter.config["aws-lambdaRegion"];
-			}
-			var lprefix = info["lambdaPrefix"];
-			if ( lprefix === undefined ) {
-				lprefix = iter.config["lambdaPrefix"];
-			}
-
-			var role = info["lambdaRole"];
-			if ( role === undefined ) {
-				role = iter.config["lambdaRole"]; // XXX if still undefined
-			}
-			var lambda = info.lambdaName;
-			if ( lambda == undefined ) {
-				lambda = info.lambda; // XXX still undefined ?
-				lambda = lambda.substring( lambda.lastIndexOf( "/" ) + 1 );
-			}
-			var account = iter.config["aws-account"]; // XXX undefined?
-
-			function putopt() {
-				var lpi = info["lambdaProxyIntegration"];
-				if ( lpi === undefined ) {
-					lpi = iter.config["lambdaProxyIntegration"];
-				}
-				var lpii = info["lambdaProxyIntegrationInput"];
-				if ( lpii === undefined ) {
-					lpii = iter.config["lambdaProxyIntegrationInput"];
-				}
-
-				var type = "AWS";
-				var param, end, reqctx;
-				if ( lpi || lpii ) {
-					if ( lpi ) type = "AWS_PROXY";
-					if ( iter.paramIndex >= 0 ) {
-						param = "\"pathParameters\":{";
-						end = "},";
-					} else {
-						param = "";
-						end = "";
-					}
-					reqctx = "\"requestContext\":{\"stage\": \"$context.stage\",\"resourcePath\":\"$context.resourcePath\",\"httpMethod\":\"$context.httpMethod\"}";
-				} else {
-					param = "";
-					end = iter.paramIndex >= 0 ? ", " : "";
-					reqctx = "\"stage\":\"$context.stage\", \"path\": \"$context.resourcePath\",\"method\"=\"$context.httpMethod\"";
-				}
-
-				for ( var i = 0; i <= iter.paramIndex; i++ ) {
-					var p = iter.param[i];
-					if ( i != 0 ) param += ", ";
-					param += "\"" + p + "\":\"$input.params('" + p + "')\"";
-				}
-				if ( i > 0 ) param += end;
-				callAWSAPI( iter, apigw, "putIntegration", {
-					httpMethod: method,
-					restApiId: iter.restapi.id,
-					resourceId: res,
-					type: type,
-					integrationHttpMethod : "POST",
-					uri: "arn:aws:apigateway:" + gwregion +
-						":lambda:path/2015-03-31/functions/arn:aws:lambda:" +
-						( lregion === undefined? gwregion : lregion ) + ":" +
-						account + ":function:" +
-						server.resolve( lprefix, iter.symbol ) +
-						lambda + "/invocations",
-					credentials: "arn:aws:iam::" + account + ":role/" + role,
-					passthroughBehavior: "WHEN_NO_TEMPLATES",
-					requestTemplates : {
-						"application/json" : "{" + param +
-						"\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end },"
-						+ reqctx + "}"
-					}
-				}, function ( err, data ) {
-					if ( err == null ) {
-						callAWSAPI( iter, apigw, "putIntegrationResponse", {
-							httpMethod: method,
-							restApiId: iter.restapi.id,
-							resourceId: res,
-							statusCode: "200"
-						}, function ( err, data ) {
-							if ( err ) {
-								if ( !retryAWSAPI( iter, err ) ) callback( err );
-							} else {
-								callAWSAPI( iter, apigw, "putMethodResponse", {
-									httpMethod: method,
-									restApiId: iter.restapi.id,
-									resourceId: res,
-									statusCode: "200",
-									responseModels: {
-										"application/json" : "Empty"
-									}
-								}, function ( err, data ) {
-									if ( err ) {
-										if ( !retryAWSAPI( iter, err ) )
-											iter.progress( iter, -1, err );
-									} else {
-										iter.progress( iter, exports.METHOD, method ); 
-										callback( err, data );
-									}
-								} );
-							}
-						} );
-					} else {
-						if ( !retryAWSAPI( iter, err ) ) callback( err );
-					}
-				} );
-			} // end of internal function putopt
-
-			if ( account === undefined ) {
-				callAWSAPI( iter, new aws.STS(), "getCallerIdentity", {},
-				function ( err, data ) {
-					if ( err ) {
-						if ( !retryAWSAPI( iter, err ) )
-							console.log( err );
-					} else {
-						iter.prevCall = undefined;
-						account = iter.config["aws-account"] =
-							data.Account;
-						putopt();
-					}
-				} );
-			} else {
-				putopt();
-			}
-		} else {
+	}, function ( err ) {
+		if ( err ) {
 			if ( !retryAWSAPI( iter, err ) )
 				callback( err );
+			return;
+		}
+		var gwregion = info["aws-gatewayRegion"];
+		if ( gwregion === undefined )
+			gwregion = iter.config["aws-gatewayRegion"]; // XXX if still undefined?
+		var lregion = info["aws-lambdaRegion"];
+		if ( lregion === undefined ) {
+			lregion = iter.config["aws-lambdaRegion"];
+		}
+		var lprefix = info["lambdaPrefix"];
+		if ( lprefix === undefined ) {
+			lprefix = iter.config["lambdaPrefix"];
+		}
+
+		var role = info["lambdaRole"];
+		if ( role === undefined ) {
+			role = iter.config["lambdaRole"]; // XXX if still undefined
+		}
+		var lambda = info.lambdaName;
+		if ( lambda == undefined ) {
+			lambda = info.lambda; // XXX still undefined ?
+			lambda = lambda.substring( lambda.lastIndexOf( "/" ) + 1 );
+		}
+		var account = iter.config["aws-account"]; // XXX undefined?
+
+		function putopt() {
+			var lpi = info["lambdaProxyIntegration"];
+			if ( lpi === undefined ) {
+				lpi = iter.config["lambdaProxyIntegration"];
+			}
+			var lpii = info["lambdaProxyIntegrationInput"];
+			if ( lpii === undefined ) {
+				lpii = iter.config["lambdaProxyIntegrationInput"];
+			}
+
+			var type = "AWS";
+			var param, end, reqctx;
+			if ( lpi || lpii ) {
+				if ( lpi ) type = "AWS_PROXY";
+				if ( iter.paramIndex >= 0 ) {
+					param = "\"pathParameters\":{";
+					end = "},";
+				} else {
+					param = "";
+					end = "";
+				}
+				reqctx = "\"requestContext\":{\"stage\": \"$context.stage\",\"resourcePath\":\"$context.resourcePath\",\"httpMethod\":\"$context.httpMethod\"}";
+			} else {
+				param = "";
+				end = iter.paramIndex >= 0 ? ", " : "";
+				reqctx = "\"stage\":\"$context.stage\", \"path\": \"$context.resourcePath\",\"method\":\"$context.httpMethod\"";
+			}
+
+			for ( var i = 0; i <= iter.paramIndex; i++ ) {
+				var p = iter.param[i];
+				if ( i != 0 ) param += ", ";
+				param += "\"" + p + "\":\"$input.params('" + p + "')\"";
+			}
+			if ( i > 0 ) param += end;
+			callAWSAPI( iter, apigw, "putIntegration", {
+				httpMethod: method,
+				restApiId: iter.restapi.id,
+				resourceId: res,
+				type: type,
+				integrationHttpMethod : "POST",
+				uri: "arn:aws:apigateway:" + gwregion +
+					":lambda:path/2015-03-31/functions/arn:aws:lambda:" +
+					( lregion === undefined? gwregion : lregion ) + ":" +
+					account + ":function:" +
+					string.resolve( lprefix, iter.symbol ) +
+					lambda + "/invocations",
+				credentials: "arn:aws:iam::" + account + ":role/" + role,
+				passthroughBehavior: "WHEN_NO_TEMPLATES",
+				requestTemplates : {
+					"application/json" : "{" + param +
+					"\"body\" : $input.json('$'),\"headers\": { #foreach($header in $input.params().header.keySet()) \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end #end }," + reqctx + "}"
+				}
+			}, function ( err ) {
+				if ( err == null ) {
+					callAWSAPI( iter, apigw, "putIntegrationResponse", {
+						httpMethod: method,
+						restApiId: iter.restapi.id,
+						resourceId: res,
+						statusCode: "200"
+					}, function ( err ) {
+						if ( err ) {
+							if ( !retryAWSAPI( iter, err ) ) callback( err );
+						} else {
+							callAWSAPI( iter, apigw, "putMethodResponse", {
+								httpMethod: method,
+								restApiId: iter.restapi.id,
+								resourceId: res,
+								statusCode: "200",
+								responseModels: {
+									"application/json" : "Empty"
+								}
+							}, function ( err, data ) {
+								if ( err ) {
+									if ( !retryAWSAPI( iter, err ) )
+										iter.progress( iter, -1, err );
+								} else {
+									iter.progress( iter, exports.METHOD, method ); 
+									callback( err, data );
+								}
+							} );
+						}
+					} );
+				} else {
+					if ( !retryAWSAPI( iter, err ) ) callback( err );
+				}
+			} );
+		} // end of internal function putopt
+
+		if ( account === undefined ) {
+			callAWSAPI( iter, new aws.STS(), "getCallerIdentity", {},
+			function ( err, data ) {
+				if ( err ) {
+					if ( !retryAWSAPI( iter, err ) )
+						console.log( err );
+				} else {
+					iter.prevCall = undefined;
+					account = iter.config["aws-account"] =
+						data.Account;
+					putopt();
+				}
+			} );
+		} else {
+			putopt();
 		}
 	} );
 }
@@ -279,7 +281,7 @@ return;*/
 				apiset: apiset,
 				key: key,
 				root: id,
-			}, iterateResource, function (iter, c) {
+			}, iterateResource, function (iter/*, c*/) {
 				var path = iter.path;
 				if ( path.charAt( path.length - 1 ) == '}' )
 					iter.param[iter.paramIndex--] = undefined;
@@ -290,9 +292,22 @@ return;*/
 	} // end of inner function callback
 	var k = c.key[i];
 	if ( k.length > 0 ) {
+		var apiset = c.apiset[k];
 		var first = k.charAt(0);
 		if ( first == '/' ) {
 			if ( k.charAt(1) != '^' ) {
+				var stage = apiset["^stage"];
+				if ( stage ) {
+					var currentStage = string.symbol
+						( "stage", iter.symbol );
+					if ( Array.isArray(stage) ?
+						!stage.find( function(s) {
+							return s === currentStage;
+						} ) : stage !== currentStage ) {
+						console.log( "mismatching stage :", k );
+						return;
+					}
+				}
 				var path = k.substring(1);
 				callAWSAPI( iter, apigw, "createResource", {
 					parentId: c.root,
@@ -301,9 +316,9 @@ return;*/
 				}, callback );
 				return exports.iterator.PENDING;
 			}
-		} else if ( first !='^' && k != "configuration" ) {
-			createMethod( iter, k, c.apiset[k], c.root,
-				function( err, data ) {
+		} else if ( first != '^' && k != "configuration" ) {
+			createMethod( iter, k, apiset, c.root,
+				function( err ) {
 					if ( err ) {
 						if ( err.code == 'ConflictException' ) {
 							iter.progress( iter,
@@ -337,19 +352,22 @@ exports.createAPI = function
 				iter.progress( null, -1, err );
 			} else {
 				var root;
+				var i;
 				iter.param = [];
 				iter.paramIndex = -1;
 				iter.resource = {};
-				for ( var i = 0; i < data.items.length; i++ ) {
+				for ( i = 0; i < data.items.length; i++ ) {
 					iter.resource[data.items[i].path] =
 						data.items[i].id;
 				}
+				var p;
 				if ( path ) {
+					var a, ctx;
 					if ( subset == null ) {
 						// if subset was not supplied
 						// find it from given api object
-						var ctx = { i : 0 };
-						var a = api;
+						ctx = { i : 0 };
+						a = api;
 						for (;;) {
 							subset = server.match( a, path, ctx );
 							if ( subset == undefined );// break;
@@ -357,18 +375,18 @@ exports.createAPI = function
 							a = subset;
 						}
 					}
-					var p = path;
+					p = path;
 					for (;;) {
 						root = iter.resource[p];
 						if ( root !== undefined ) break;
-						var i = p.lastIndexOf( "/" );
+						i = p.lastIndexOf( "/" );
 						if ( i < 0 ) break;
-							var a = {};
+						a = {};
 						a[p.substring(i)] = subset;
 						subset = a;
 						p = p.substring( 0, i );
 					}
-					var ctx = { i : 0 };
+					ctx = { i : 0 };
 					for (;;) {
 						server.match( null, p, ctx );
 						if ( ctx.part.charAt(1) == '{' )
@@ -400,8 +418,8 @@ exports.createAPI = function
 		} );
 	}
 
+	if ( name == null ) name = api.configuration.name;
 	if ( typeof name === 'string' ) {
-		if ( name == null ) api.configuration.name;
 		var resolved = this.getAPISet( iter, name, symbol, function( err, data ) {
 			if ( err ) {
 				if ( err.code != "NotFoundException" ) {
@@ -423,7 +441,7 @@ exports.createAPI = function
 	} else {
 		newapi( null, name );
 	}
-}
+};
 
 
 // EOF

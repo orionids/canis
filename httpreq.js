@@ -1,17 +1,18 @@
 // vim: ts=4 sw=4 :
+// jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
-'use strict'
+"use strict";
 module.exports = function( mod, o, f ) {
 	try {
 		let req = mod.request( o, function(res) {
-			let r = '';
-			res.on('data', function(d) {
+			let r = "";
+			res.on("data", function(d) {
 				r += d;
 			} );
-			res.on('end', function() {
-				f( null, r, req );
+			res.on("end", function() {
+				f( null, r, res );
 			});
 		});
 		if ( o.data !== undefined )
@@ -20,11 +21,11 @@ module.exports = function( mod, o, f ) {
 			req.write( JSON.stringify(o.body) );
 		}
 
-		req.on('error', function(e) {
+		req.on("error", function(e) {
 			f( e );
 		} );
 		req.end();
 	} catch ( e ) {
 		f( e );
 	}
-}
+};

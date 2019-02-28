@@ -1,4 +1,4 @@
-var server = require("canis/server")
+var string = require("canis/string")
 
 
 var sym = {
@@ -17,6 +17,6 @@ var ctx = {
 	delim : { open:"{", close:"}", escape:"\\"}
 };
 
-console.log( server.resolve( "{hello}{world}", [ sym ] , ctx ) );
+console.log( string.resolve( "{hello}{world}", [ sym ] , ctx ) );
 console.log( sym.world );
-console.log( server.resolve( "{hello}{world}", [ sym ] , ctx ) );
+console.log( string.resolve( "{hello}{world}", [ sym ] , ctx ) );
