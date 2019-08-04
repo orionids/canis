@@ -128,7 +128,7 @@ invoke(api,basepath,request,response,param) {
 			  ( m.apiKeyRequired != false && config.apiKeyRequired == true ) ) {
 				if ( ctx.apiKey !== undefined ) {
 					if ( request.headers['x-api-key'] != ctx.apiKey ) {
-						console.log( "API key mismatch" );
+						console.log( "API key mismatch", request.headers['x-api-key'], ctx.apiKey );
 						return;
 					}
 				}
