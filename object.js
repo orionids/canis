@@ -35,6 +35,7 @@ exports.property = function( o, a ) {
 
 exports.clone = function( o, r )
 {
+	if ( o === null ) return null;
 	if ( Array.isArray( o ) ) {
 		var newa = new Array(o.length);
 		for ( var i = 0; i < o.length; i++ ) {
@@ -53,6 +54,7 @@ exports.clone = function( o, r )
 			if ( o.hasOwnProperty(p) ) {
 				var op = o[p];
 				if ( op !== undefined ) {
+					if ( r.ctx ) r.ctx.property = p;
 					if ( (newo[p] = exports.clone
 						( o[p], r )) === undefined )
 						return undefined;
