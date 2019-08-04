@@ -55,11 +55,15 @@ exports.resolve = function( s, symbol, ctx ) {
 		break;
 	}
 
+	if ( ctx.preproc )
+		s = ctx.preproc( s, ctx );
+
 	if ( ctx.resolved !== undefined ) {
 		replace( ctx.resolved, ctx.end );
 	}
 
 	if ( s === undefined ) return "";
+	if ( s === null ) return null;
 	while ( ( i = s.indexOf( delim.open, i ) ) >= 0 ) {
 		var prev = i - 1;
 		var next = i + delim.open.length;
