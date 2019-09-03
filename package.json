@@ -1,23 +1,92 @@
 {
-  "name": "canis",
-  "version": "0.3.3",
-  "description": "Node.js based RESTful web service for Orion project",
-  "main": "server.js",
-  "scripts": {
-    "test": "node test/run.js",
-    "start": "node server.js"
+  "_args": [
+    [
+      {
+        "raw": "canis@>=0.3.3",
+        "scope": null,
+        "escapedName": "canis",
+        "name": "canis",
+        "rawSpec": ">=0.3.3",
+        "spec": ">=0.3.3",
+        "type": "range"
+      },
+      "/home/cmsadm/orion/devel/ss"
+    ]
+  ],
+  "_from": "canis@>=0.3.3",
+  "_hasShrinkwrap": false,
+  "_id": "canis@0.3.4",
+  "_inCache": true,
+  "_location": "/canis",
+  "_nodeVersion": "9.11.2",
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/canis_0.3.4_1564926973310_0.518520127187176"
   },
+  "_npmUser": {
+    "name": "adaptiveflow",
+    "email": "adaptiveflow@gmail.com"
+  },
+  "_npmVersion": "5.6.0",
+  "_phantomChildren": {},
+  "_requested": {
+    "raw": "canis@>=0.3.3",
+    "scope": null,
+    "escapedName": "canis",
+    "name": "canis",
+    "rawSpec": ">=0.3.3",
+    "spec": ">=0.3.3",
+    "type": "range"
+  },
+  "_requiredBy": [
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/canis/-/canis-0.3.4.tgz",
+  "_shasum": "c5fd9606267173dfb1e729f9d8e8815ea847d5e5",
+  "_shrinkwrap": null,
+  "_spec": "canis@>=0.3.3",
+  "_where": "/home/cmsadm/orion/devel/ss",
+  "author": {
+    "name": "adaptiveflow"
+  },
+  "bugs": {
+    "url": "https://github.com/orionids/canis/issues"
+  },
+  "dependencies": {},
+  "description": "Node.js based RESTful web service for Orion project",
+  "devDependencies": {},
+  "directories": {},
+  "dist": {
+    "integrity": "sha512-wstiUAmKAfYID+KkOhOI+LJXriljoNexircUECgmNpVg1FeueyLVndvm8wBBKoVfWJz9yHgGGDMd5g2WGz61GA==",
+    "shasum": "c5fd9606267173dfb1e729f9d8e8815ea847d5e5",
+    "tarball": "https://registry.npmjs.org/canis/-/canis-0.3.4.tgz",
+    "fileCount": 34,
+    "unpackedSize": 73717,
+    "npm-signature": "-----BEGIN PGP SIGNATURE-----\r\nVersion: OpenPGP.js v3.0.4\r\nComment: https://openpgpjs.org\r\n\r\nwsFcBAEBCAAQBQJdRuP+CRA9TVsSAnZWagAAXEMP/2u/L9zj/VZAuxE/QiF0\nkIMYxCdbVT2A+KPdeis9NuzSIaKZ41KfA9CH8hPdxUnWNKp1+GtWF1TWlzqT\nygEuQqFocDv2yZUtpn59qiszEdNqiskzA9fdS6RnpPFFXUZP5lUoK/7Ry7Q4\nnFGHlDS2FUNI3GebBPSMMppiPEoINd/C4SOfg423/0NTDuBuRCyL5F4l7i/N\n0R2Kbu3QWDulqWaH3xNFbJhfmlpxDKjXq/OusVZ5E4gK9gEaC5JPeFHufaYw\nfU3hGrlEqiO6lkkMHUBn55CBqFhjnfzP88RSA5Cq/Y7K5o/IyLVIjLMSlJRF\nD3gW+Xar9YfVVb312k3n3BrD+ZvTImHjdTKyU1ItIT1VN6f5piyJiLHyeE6Q\nuGUN4wKL+9XAkhslJhu8jnKrKlkEghcz0CIvlcrpw4aXa68ijHRoBKq8ER/1\n3upU+dbCud0InR+N1yiSTzxy8+G57yTTCvk+VuTLINXEOoRN/NkxwK+XI3In\nzLEx1seGX8MUOQaqqEQ0B/mcEIyxGN7+AwiZ0Tl1WGXBhfTok2q4vHwJf205\n1DSzEKmQp4Ctpqr0cwdVxdbr6s8OMGDdSPPX8mQIw1oFLpjbT+3MOHbwpjzp\nlXi2YJ+pHv1BSdqFgZHQA2RcWGjo3AoclK5pOM5YDbMtcbnqD/Ya8egn1yGD\nMzDe\r\n=btOF\r\n-----END PGP SIGNATURE-----\r\n"
+  },
+  "gitHead": "6a35dba4e89c7f455aa077781f66d8d945cb237c",
+  "homepage": "https://github.com/orionids/canis#readme",
+  "keywords": [
+    "RESTful"
+  ],
+  "license": "ISC",
+  "main": "server.js",
+  "maintainers": [
+    {
+      "name": "adaptiveflow",
+      "email": "adaptiveflow@gmail.com"
+    }
+  ],
+  "name": "canis",
+  "optionalDependencies": {},
+  "readme": "ERROR: No README data found!",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/orionids/canis.git"
   },
-  "keywords": [
-    "RESTful"
-  ],
-  "author": "adaptiveflow",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/orionids/canis/issues"
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/run.js"
   },
-  "homepage": "https://github.com/orionids/canis#readme"
+  "version": "0.4.0"
 }
