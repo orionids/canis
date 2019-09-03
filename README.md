@@ -10,7 +10,7 @@ So Canis is a part of Orion project and will support :
 - API definition using JSON and automatic API hirarchy generation for AWS. ( initial implementation is done )
 - Supports popular web app frameworks like Express. ( Partial implementation for express is done )
 
-## New features in 0.1.0 to 0.3.3
+## New features in 0.1.0 to 0.4.0
 - AWS related
 	- Functions needed to generate AWS APIs and methods automatically according to api.json
 		- property names begin with ^ or /^ are excluded from auto generation
@@ -26,6 +26,8 @@ So Canis is a part of Orion project and will support :
 	- API key support
 	- Custom interactive command
 	- Client socket management
+	- Static page support
+	- Multiple API sets
 - Utilities related
 	- delimiters to define a symbol is changed from {} to [] because {} is used to define path parameters
 	- custom delimiters can be specified to resolve symbols
