@@ -17,7 +17,9 @@ function ( context, name, param, flag, callback ) {
 			}
 		} catch ( e ) {
 			if ( e.code !== "MODULE_NOT_FOUND" ) {
-				callback( e );
+				setTimeout( function() {
+					callback( e );
+				} );
 				return true;
 			}
 		}
