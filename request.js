@@ -50,6 +50,16 @@ console.log(r);
 //XXX exception
 };
 
+exports.http = function
+( server, api, basepath, request, response, param ) {
+	var p = {
+		https: require("http")
+	};
+	Object.assign( p, param );
+	exports.https( server, api, basepath,
+		request, response, p );
+}
+
 exports.local = function
 ( server, api, basepath, request, response, param ) {
 	var symbol;
@@ -77,6 +87,7 @@ exports.local = function
 var callee = {
 	"local" : exports.local,
 	"https" : exports.https,
+	"http" : exports.http
 };
 
 exports.callee = function (name ) {
