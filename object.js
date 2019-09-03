@@ -54,7 +54,7 @@ exports.clone = function( o, r )
 			if ( o.hasOwnProperty(p) ) {
 				var op = o[p];
 				if ( op !== undefined ) {
-					if ( r.ctx ) r.ctx.property = p;
+					if ( r && r.ctx ) r.ctx.property = p;
 					if ( (newo[p] = exports.clone
 						( o[p], r )) === undefined )
 						return undefined;
