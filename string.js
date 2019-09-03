@@ -95,7 +95,10 @@ exports.resolve = function( s, symbol, ctx ) {
 	return s;
 };
 
+/* XXX share prevTime bet proc? -> from redis */
+//XXX restricted word???
 var prevTime;
+var charSet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 exports.unique = function( callback ) {
 	(function wait(t) {
 		setTimeout( function() {
@@ -104,8 +107,27 @@ exports.unique = function( callback ) {
 				wait( 1 );
 			} else {
 				prevTime = now;
-				callback( now );
+				var id = "";
+				do {
+					var mod = now % 36;
+					id += charSet.charAt(mod);
+				} while ( (now = (now/36) | 0) > 0 );
+				callback( id );
 			}
 		}, t );
 	})();
 };
+
+
+/* XXX */
+exports.csv = function(s)
+{
+	var i = 0;
+	while ( (i = s.indexOf('"',i)) > 0 ) {
+		if ( i + 1 < s.length )
+			s = s.substring(0,i) + '"' + s.substring(i);
+		i += 2;
+	}
+
+	return s.indexOf(',') >=0 ? '"' + s + '"' : s;
+}
