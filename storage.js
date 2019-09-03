@@ -6,6 +6,7 @@
 
 'use strict';
 
+var fs = require("fs");
 var object = require( "canis/object" );
 
 function
@@ -590,6 +591,58 @@ exports.finalize = function( context )
 	}
 };
 
+exports.scan = function( context, tblpref, name, callback )
+{
+	if ( tblpref === undefined ) {
+		var invoke = require("canis/invoke");
+		invoke( context, name, null, invoke.DISABLE_REMOTE,
+		function(err,data) {
+			var scan = {
+				Items: []
+			};
+
+			var cnt = 0;
+			for ( var p in data ) {
+				var d = data[p];
+				if ( Array.isArray(d) ) {
+					for ( var i = 0; i < d.length; i++ ) {
+						scan.Items.push( d[i] );
+						cnt ++;
+					}
+				} else {
+					scan.Items.push( d );
+					cnt ++;
+				}
+			}
+			scan.Count = cnt;
+
+			callback( null, scan );
+		} );
+	} else {
+		var param = {
+			TableName: tblpref + name,
+			//Limit : 50
+		};
+
+		(function scan() {
+			context.ddbcli().scan( param,
+			function(err,data) {
+				if ( err ) {
+					callback(err );
+				} else {
+					var next;
+					if ( data.LastEvaluatedKey ) {
+						param.ExclusiveStartKey =
+							data.LastEvaluatedKey;
+						next = scan;
+					}
+					callback(err,data, next );
+				}
+			} );
+		})();
+	}
+}
+
 // lock can be done by both put and update
 // but unlock is not, so separate function is defined
 /*exports.unlock = function
@@ -622,7 +675,6 @@ exports.snapshot = function
 			} else {
 				var s = JSON.stringify(data,null,4);
 				if ( path ) {
-					var fs = require("fs");
 					fs.open( path, "w", function( err, fd ) {
 						if ( err ) {
 							callback( err );
@@ -642,4 +694,122 @@ exports.snapshot = function
 };
 
 
+exports.createDirectory = function(path,callback) {
+	var p;
+	var from = 0, to = -1;
+	var i = path.length;
+	var p = path;
+	while ( !fs.existsSync( p ) ) {
+		i = p.lastIndexOf( "/", i );
+		if ( i < 0 ) break;
+		p = path.substring(0,i);
+	}
+console.log( path.substring(i) );
+	while ( ++i < path.length ) {
+		i = path.indexOf( "/", i );
+		fs.mkdirSync( i < 0 ? path : path.substring(0,i) );
+	}
+}
+
+
+exports.open = function ( context, id, path, local ) {
+	function fileName(a,b,c) {
+		return a + "/" + b + "/" + c;
+	}
+	if ( typeof id === "object" ) {
+		var fn = id ? fileName( path,
+			id.param.Bucket, id.param.Key ) : path;
+		var p = fn;
+		var i = p.lastIndexOf("/");
+		if ( i > 0 ) {
+			exports.createDirectory( p.substring(0,i) );
+		}
+		try {
+			var fd = fs.openSync( fn,
+				local !== undefined ? local : "w+" );
+			if ( fd >= 0 ) {
+				return {
+					fd: fd,
+					offset: 0
+				}
+	//		console.log( p );
+	//		fs.mkdirSync( p );
+			}
+		} catch ( e ) {
+console.log( e );
+		}
+	} else {
+/*		if ( local ) {
+			var ioc = exports.open( context, null,
+				fileName( local, id, path ),
+					"wx+" );
+			if ( ioc ) return ioc;
+		}*/
+console.log( id );
+console.log( path );
+		return {
+			s3 : context.s3(),
+			param : {
+				Bucket : id,
+				Key: path
+			}
+		}
+	}
+}
+
+exports.close = function ( ioc ) {
+	var fd = ioc.fd;
+	if ( fd === undefined ) {
+	} else {
+		fs.closeSync( ioc.fd );
+	}
+}
+
+exports.read = function( ioc, callback )
+{
+	var fd = ioc.fd;
+	if ( fd === undefined ) {
+		ioc.s3.getObject( ioc.param, function(err,data) {
+			if ( !err ) {
+				data.buf = data.Body;
+			}
+			callback( err, data );
+		} );
+	} else {
+		fs.fstat( fd, function(err,st) {
+			if ( err ) {
+				callback(err);
+			} else {
+				var data = {
+					buf : Buffer.alloc( st.size )
+				}
+				fs.read( fd, data.buf, 0,st.size, 0,
+				function(err) {
+					if ( err ) callback(err);
+					else callback( null, data );
+				});
+			}
+		} );
+	}
+}
+
+exports.write = function( ioc, buf, callback ) {
+	var fd = ioc.fd;
+	if ( fd === undefined ) {
+		var param = { 
+//"ACL" : "public-read",
+			"Body" : buf,
+			"ContentType":"application/octet-stream" };
+		Object.assign( param, ioc.param );
+		ioc.s3.putObject( param, callback );
+	} else {
+		if ( typeof buf === "string" )
+			buf = Buffer.from( buf );
+		fs.write( fd, buf, 0, buf.length,
+			ioc.offset, callback );
+		ioc.offset += buf.length;
+	}
+}
+
 // EOF
+
