@@ -38,6 +38,15 @@ module.exports.lambda = function () {
 	return lambda;
 };
 
+module.exports.s3 = function() {
+	var s3 = this._entity._s3;
+	if ( !s3 ) {
+		s3 = new aws.S3();
+		this._entity._s3 = s3;
+	}
+	return s3;
+}
+
 module.exports.cwe = function () {
 	var cwe = this._entity._cwe;
 	if ( !cwe ) {
@@ -46,6 +55,15 @@ module.exports.cwe = function () {
 	}
 	return cwe;
 };
+
+module.exports.service = function(name) {
+	var service = this._entity[name];
+	if ( !service ) {
+		service = new aws[name]();
+		this._entity[name] = service;
+	}
+	return service;
+}
 
 // this used to prevent cross reference
 // register self: context.module( "my/module1", this );
