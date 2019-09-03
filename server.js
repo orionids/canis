@@ -4,17 +4,24 @@
 // Distributed under ISC License
 
 "use strict";
+var fs = require( "fs" );
+var path = require( "path" );
 var string = require( "canis/string" );
 var object = require( "canis/object" );
 
+process.on( 'uncaughtException', function (err,origin) {
+	console.log( err );
+	console.log( origin );
+} );
 
 exports.stage = function ( config, url, ctx ) {
 	var stage;
 	for (;;) {
+		var i = ctx.i;
+		if ( i === undefined ) i = 0;
 		if ( config.stage !== undefined ) {
 			// ignore preceding path separator to find stage
-			// TODO: need to check the first char is '/' ?
-			ctx.i = 1;
+			if ( url.charAt(ctx.i) == '/' ) ctx.i = i + 1;
 			stage = match ( config.stage, url, ctx );
 			if ( stage !== undefined ) {
 				var apikey = stage.apiKey;
@@ -24,7 +31,7 @@ exports.stage = function ( config, url, ctx ) {
 				}
 			}
 		} else {
-			ctx.i = 0;
+			ctx.i = i;
 			stage = null;
 		}
 		ctx.apiKey = config.apiKey;
@@ -39,6 +46,7 @@ match( api, url, ctx ) {
 	var start = ctx.i;
 	var i = url.indexOf( "/", start + 1 );
 	ctx.i = i;
+	ctx.prev = start;
 	ctx.part = url.substring
 		( start, i > 0 ? i : undefined );
 	// include api == null or api === undefined
@@ -47,23 +55,78 @@ match( api, url, ctx ) {
 }
 
 function
-invoke(api,basepath,request,response,param) {
+resource( m, p, response )
+{
+	p = path.normalize( p );
+	if ( p.charAt(0) == "." ) {
+		console.log( "Suspicious request using relative path :", p );
+	} else {
+		p = m.path + p;
+		if ( m.base ) {
+			var base = process.env[m.base];
+			if ( base )
+			p = base + "/" + p;
+		}
+console.log( p );
 
-	// match API
+		fs.readFile( p, function(err,data) {
+			if ( err ) {
+				console.log( err );
+			} else {
+				var type = "text/html";
+				var index = p.lastIndexOf(".");
+				if ( index > 0 ) {
+					switch( p.substring( index + 1 ) ) {
+						case "jpg" : case "jpeg":
+						type = "image/jpeg";
+						break;
+						case "png" :
+						type = "image/png";
+						break;
+						case "gif" :
+						type = "image/gif";
+						break;
+					}
+				}
+				response.writeHead(200, {
+					'Content-Type' : type
+					/*"application/octet-stream"*/ });
+				response.write( data );
+				response.end();
+			}
+		} );
+	}
+}
+
+function
+invoke(api,basepath,request,response,param)
+{
 	var url = request.url;
 	if ( !url ) return;
 	var ctx = {};
 	var a;
 	var ev = {};
+
+	if ( api.apiSet ) {
+		ctx.i = 1;
+		api = match( api, url, ctx );
+		if ( api === undefined ) {
+			console.log( "Unknown API set", ctx.part );
+			return;
+		}
+	}
+
 	var config = api.configuration;
 	if ( config === undefined ) config = {};
 	if ( exports.stage( config, url, ctx ) === undefined ) {
-		console.log( "Unknown stage " + ctx.part ); // XXX
+		console.log( "Unknown stage", ctx.part ); // XXX
 		return;
 	}
 
 	var queryParam;
-	var queryParamIndex = url.lastIndexOf('?');
+	/* don't use lastIndexOf to guarantee url doesn't
+	 contain '?' */
+	var queryParamIndex = url.indexOf('?');
 	if ( queryParamIndex > 0 ) {
 		queryParam = {}; // AWS supplies null object if query string param is absent
 		// XXX duplicated in ueParameter
@@ -121,8 +184,9 @@ invoke(api,basepath,request,response,param) {
 		if ( ctx.i < 0 ) break;
 		api = a;
 	}
+	var m;
 	if ( a !== undefined ) {
-		var m = a[request.method];
+		m = a[request.method];
 		if ( m !== undefined ) {
 			if ( m.apiKeyRequired == true ||
 			  ( m.apiKeyRequired != false && config.apiKeyRequired == true ) ) {
@@ -135,6 +199,7 @@ invoke(api,basepath,request,response,param) {
 			}
 			try {
 				var lambda = m.lambda;
+console.log( lambda );
 				var l = require( basepath ?
 					basepath + "/" + lambda : lambda  );
 				var str = '';
@@ -216,18 +281,26 @@ if ( xxx ) { // XXX more test is needed for exception case
 			console.log( "Unknown method " + request.method );
 		}
 	} else {
-		console.log( "Unknown API " + request.url );
+		a = api["/"];
+		if ( a === undefined ) a = api;
+		m = a[request.method];
+		if ( m && m.path ) {
+			resource( m, url.substring( ctx.prev ),
+				response );
+		} else {
+			console.log( "Unknown API " + request.url );
+		}
 	}
 }
 exports.match = match;
 exports.invoke = invoke;
 
-exports.run = function(api,basepath,param) {
+exports.run = function(apiset,basepath,param) {
 	function dispatch( request, response ) {
-		invoke( api, basepath, request, response, param );
+		invoke( apiset, basepath, request, response, param );
 	}
 
-	if ( api ) {
+	if ( apiset ) {
 		const http = require( "http" );
 
 		var listener = dispatch;
@@ -253,6 +326,7 @@ exports.run = function(api,basepath,param) {
 		if ( client ) {
 			server.client = {};
 			server.on( "connection", function(socket) {
+console.log( "New client", socket.remoteAddress );
 				string.unique( function( id ) {
 					socket.id = id;
 					server.client[id] = socket;
@@ -269,11 +343,13 @@ exports.run = function(api,basepath,param) {
 };
 
 exports.close = function( server ) {
-	server.close();
-	var client = server.client;
-	for ( var c in client ) {
-		if ( client.hasOwnProperty(c) )
-			client[c].destroy();
+	if ( typeof server === "object" ) {
+		server.close();
+		var client = server.client;
+		for ( var c in client ) {
+			if ( client.hasOwnProperty(c) )
+				client[c].destroy();
+		}
 	}
 };
 
@@ -286,7 +362,8 @@ exports.close = function( server ) {
 //   module : external module
 //   context : 2nd param of handler
 
-exports.main = function(name,param) {
+exports.main = function(apidef,param)
+{
 	var run;
 	if ( typeof param === "function" ) {
 		run = param;
@@ -325,24 +402,57 @@ exports.main = function(name,param) {
 	}
 	if ( !run ) run = exports.run;
 
-	var r;
-	const cwd = process.cwd();
-	const file = cwd + "/" + name;
-	try {
-		var api = object.load( file );
-		if ( api === undefined ) return undefined;
-		r = run( api, cwd, param );
-	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" ) {
-			r = run( null, cwd, param );
-		} else {
-		//	require( file ); // raise exception again to know datails
+	function getAPI( cwd, name ) {
+		try {
+			return object.load(cwd + "/" + name );
+		} catch ( e ) {
+			if ( e.code === "MODULE_NOT_FOUND" ) {
+				// so user supplied run function will have
+				// change to be run
+				return null;
+			} else {
+			//	require( file ); // raise exception again to know datails
 console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
-			return undefined;
+			}
 		}
+		return undefined;
 	}
+
+	var apiset;
+	const cwd = process.cwd();
+
+	if ( Array.isArray(apidef) ) {
+		apiset = { apiSet: true };
+		for ( var i = 0; i < apidef.length; i++ ) {
+			var alias = undefined;
+			var name = apidef[i];
+			if ( typeof name === "object" ) {
+				alias = name.alias;
+				name = name.name;
+			}
+			if ( alias === undefined ) {
+				var end = name.lastIndexOf(".");
+				if ( end < 0 ) end = undefined;
+				alias = name.substring
+					( name.lastIndexOf( "/" ) + 1, end );
+			}
+			var a = getAPI(cwd,name);
+			if ( a === undefined ) return undefined;
+			if ( a === null ) {
+				apiset = null;
+				break;
+			}
+			apiset[alias] =	a;
+		}
+	} else {
+		apiset = getAPI(cwd,apidef);
+	}
+
+	if ( apiset === undefined ) return undefined;
+	var r = run( apiset, cwd, param );
 	if ( r !== undefined ) return r;
-	return true;
+	// so below default api run will do nothing
+	return false;
 };
 
 if ( exports.main( "api" ) === undefined )
