@@ -38,6 +38,12 @@ exports.body = {
 			"GET" : {
 				"lambda" : "lambda/world"
 			}
+		},
+	},
+	"/xyz" : {
+		"GET": {
+			"path" : "html",
+			"base" : "STATIC_PATH"
 		}
 	}
 };

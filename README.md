@@ -42,6 +42,7 @@ So Canis is a part of Orion project and will support :
 		- to support various storage access using compatible functions
 		- Memory DB to simulate specific storage state using compatible API
 		- Compatible synchronization method
+		- S3 support
 	- object.js, string.js : some utility functions related to objects & strings
 
 ## Known todo list
