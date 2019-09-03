@@ -12,7 +12,22 @@ module.exports = function( mod, o, f ) {
 				r += d;
 			} );
 			res.on("end", function() {
-				f( null, r, res );
+				if ( res.statusCode != 200 ) {
+					f ( {
+						statusCode: res.statusCode,
+						message: r
+					} );
+				} else {
+					if ( o.json ) {
+						try {
+							r = JSON.parse(r);
+						} catch ( e ) {
+							f ( e );
+							return;
+						}
+					}
+					f( null, r, res );
+				}
 			});
 		});
 		if ( o.data !== undefined )
