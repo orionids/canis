@@ -41,10 +41,13 @@ exports.https = function
 		r.path = basepath ? basepath + r.url : r.url;
 console.log(r);
 		httpreq( https, r, function( err, data, res ) {
-			if ( err ) console.log( err );else
-			response.writeHead( res.statusCode );
-			response.write( data );
-			response.end( data );
+			if ( err ) {
+				console.log( err );
+			} else {
+				response.writeHead( res.statusCode );
+				response.write( data );
+				response.end( data );
+			}
 		} );
 	}
 //XXX exception
@@ -91,7 +94,11 @@ var callee = {
 };
 
 exports.callee = function (name ) {
-	return callee[name];
+	var i;
+	return callee
+		[ name === undefined? 0 :
+			(i = name.indexOf(".")) > 0 ?
+				name.substring(0,i) : name];
 };
 
 exports.iterate = function( target, symbol, callback,
