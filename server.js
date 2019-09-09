@@ -247,8 +247,10 @@ console.log( lambda );
 					function(xxx,result) {
 						var type;
 						var stat;
+						var hdr;
 						if ( lpi ) {
 							stat = result.statusCode;
+							hdr = result.headers;
 							result = result.body;
 							// XXX case when result has headers
 						} else {
@@ -264,7 +266,9 @@ console.log( lambda );
 if ( xxx ) { // XXX more test is needed for exception case
 	console.log( xxx );
 } else {
-						response.writeHead(stat, {'Content-Type' : type });
+						response.writeHead(stat, hdr? hdr : {
+							'Content-Type' : type
+						});
 						response.write( result );
 						response.end();
 }
