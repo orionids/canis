@@ -269,7 +269,7 @@ if ( xxx ) { // XXX more test is needed for exception case
 						response.writeHead(stat, hdr? hdr : {
 							'Content-Type' : type
 						});
-						response.write( result );
+						if ( result ) response.write( result );
 						response.end();
 }
 					} );
