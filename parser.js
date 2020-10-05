@@ -19,37 +19,35 @@ exports.context = function(src,cdelim)
 		expr: [],
 		exprIndex: 0,
 		stk: [],
-		stkIndex: 0
+		stkIndex: 0,
+		lastIndex: -1
 	};
 	return pc;
 };
 
-exports.parse = function( pc )
+exports.token = function( pc )
 {
-	for (;;) {
-		var r;
-		var re = pc.re;
-		var src = pc.src;
-		var from = re.lastIndex, to;
+	var src = pc.src;
+	var from = pc.lastIndex + 1;
+	if ( from >= src.length ) return undefined;
+	var r;
+	var re = pc.re;
 
-//	console.log( src, from );
-		if ( blank(src,from) ) {
-//	console.log( "BL" );
-			r = re.exec( src );
-			from = re.lastIndex;
-		}
-
+	if ( blank(src,from) ) {
 		r = re.exec( src );
-		to = r.index;
-		var last = re.lastIndex;
-
-		if ( from === to ) {
-			console.log( src.substring(from,last) );
-		} else {
-			console.log( "[" + src.substring(from,to) + "]" );
-			pc.expr[pc.exprIndex++] = src.substring(from,to);
-		}
-		if ( last >= src.length ) break;
+		from = r.index + 1;
 	}
+
+	r = re.exec( src );
+	
+	var to = r ? r.index : src.length;
+	pc.lastIndex = to;
+
+	return src.substring(from,to);
+//		pc.expr[pc.exprIndex++] = src.substring(from,to);
 };
 
+exports.last = function(pc)
+{
+	return pc.src.charAt(pc.lastIndex);
+}

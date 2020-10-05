@@ -38,28 +38,10 @@ module.exports.lambda = function () {
 	return lambda;
 };
 
-module.exports.s3 = function() {
-	var s3 = this._entity._s3;
-	if ( !s3 ) {
-		s3 = new aws.S3();
-		this._entity._s3 = s3;
-	}
-	return s3;
-}
-
-module.exports.cwe = function () {
-	var cwe = this._entity._cwe;
-	if ( !cwe ) {
-		cwe = new aws.CloudWatchEvents();
-		this._entity._cwe = cwe;
-	}
-	return cwe;
-};
-
-module.exports.service = function(name) {
+module.exports.service = function(name,param) {
 	var service = this._entity[name];
 	if ( !service ) {
-		service = new aws[name]();
+		service = new aws[name](param);
 		this._entity[name] = service;
 	}
 	return service;
@@ -91,20 +73,20 @@ module.exports.module = function (name,loc,lazy) {
 	}
 };
 
-module.exports.setProperty = function(name,value)
+module.exports.set = function(name,value)
 {
 	if ( value === undefined ) delete this._entity[name];
 	else this._entity[name] = value;
 };
 
-module.exports.getProperty = function(name)
+module.exports.get = function(name)
 {
 	return this._entity[name];
 };
 
 module.exports.delay = function(prop,f,param)
 {
-	var delay = this.getProperty(prop);
+	var delay = this.get(prop);
 	if ( delay !== undefined ) {
 		this.setProperty(prop);
 		setTimeout( function () {

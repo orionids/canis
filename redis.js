@@ -8,7 +8,8 @@ var redis = require( "redis" );
 
 exports.initialize = function( param, callback )
 {
-	let client = redis.createClient( param.port, param.addr );
+	let client = redis.createClient
+		( param.port, param.host );
 
 	client.on('error', function (err ) {
 		callback( err, client );
