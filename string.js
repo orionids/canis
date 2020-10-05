@@ -30,7 +30,7 @@ exports.symbol = function ( s, symbol ) {
 		return undefined;
 	}
 	if ( symbol ) return onDemandSymbol( symbol, s );
-	return undefined;
+	return process.env[s];
 };
 
 exports.resolve = function( s, symbol, ctx ) {
@@ -79,6 +79,8 @@ exports.resolve = function( s, symbol, ctx ) {
 					replace( delim.open + sym + delim.close,
 						end );
 					i = end + 1;
+				} else if ( ctx.loose === null ) {
+					replace( '', end );
 				} else {
 					ctx.i = i;
 					ctx.end = end;
@@ -95,29 +97,62 @@ exports.resolve = function( s, symbol, ctx ) {
 	return s;
 };
 
+exports.resolveCache = function( cache, name, symbol ) {
+	var resolved = cache.__resolved;
+	if ( resolved === undefined )
+		resolved = cache.__resolved = {};
+	var s = resolved[name];
+	if ( s === undefined ) {
+		s = cache[name];
+		if ( s ) {
+			s = exports.resolve( s, symbol );
+			resolved[name] = s;
+			delete cache[name];
+		}
+	}
+	return s;
+}
+
 /* XXX share prevTime bet proc? -> from redis */
 //XXX restricted word???
 var prevTime;
-var charSet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-exports.unique = function( callback ) {
+exports.unique = function( callback, current ) {
 	(function wait(t) {
 		setTimeout( function() {
-			var now = Date.now();
+			var now = current === undefined?
+				Date.now() : current;
 			if ( now === prevTime ) {
 				wait( 1 );
 			} else {
 				prevTime = now;
-				var id = "";
-				do {
-					var mod = now % 36;
-					id += charSet.charAt(mod);
-				} while ( (now = (now/36) | 0) > 0 );
-				callback( id );
+				callback( now.toString(36) );
 			}
 		}, t );
 	})();
 };
 
+exports.path = function( l, path )
+{
+	var env;
+	var s;
+	var delim = path.delimiter;
+	var sep = path.sep;
+	if ( !Array.isArray(l) ) l = [l];
+	for ( var i = 0; i < l.length; i++ ) {	
+		var li = l[i];
+		if ( typeof(li) !== "string" ) {
+			env = li.name? process.env[li.name] : undefined;
+			li = li.path;
+		}
+		if ( env )
+			li = li? env + path.sep +
+				li.replace("/",path.sep) : env
+		if ( li )
+			s = s? s + ( li.charAt(0) == delim?
+				li :  delim + li ) : li;
+	}
+	return  s;
+}
 
 /* XXX */
 exports.csv = function(s)

@@ -162,6 +162,103 @@ throw new Error( "Unexpected operator " + key.cond );
 	}
 };
 
+var ddbParam = {
+	put: function( name, key, body ) {
+		var item = {};
+		item[key.p] = key.pval;
+		if ( key.s ) item[key.s] = key.sval;
+		Object.assign( item, body );
+		var param = {
+			TableName: name,
+			Item: item
+		};
+		if ( key.sync && !unlock ) {
+			require("canis/awsddb").conditionExpression
+				( param, key.sync, "putExpression" );
+		}
+		return param;
+	},
+	update: function( name,key,expr) {
+		var awsddb = require( "canis/awsddb" );
+		var Key = {};
+		Key[key.p] = key.pval;
+		if ( key.s ) Key[key.s] = key.sval;
+		var param = {
+			TableName: name,
+			Key: Key
+		};
+		var state;
+		if ( key.sync )
+			state = awsddb.conditionExpression
+				( param, key.sync, "updateExpression", unlock );
+
+		if ( Array.isArray(expr) ) {
+			var action = 0;
+			while ( i < expr.length ) {
+				var e = expr[i++];
+				// prevent null, so null can be used to
+				// specify removal
+				if ( e !== null && typeof e === "object" ) {
+					state = awsddb.updateExpression
+					( param, action, state, e.name, e.value );
+				} else {
+					action = e;
+				}
+			}
+			// don't do this, key only item can be saved
+			//if ( state === undefined ) break;
+		} else if ( typeof expr === "object" ) {
+			awsddb.updateExpression
+			( param, 0, state, expr.name, expr.value );
+		}
+		return param;
+	}
+}
+
+
+exports.transact = function
+	( context, tblpref, param, callback ) {
+	var i;
+	var pi;
+	if ( tblpref !== undefined ) {
+		var name = getStorageContext
+			( context, tblpref, "@" );
+		if ( name ) {
+			var ddbparam = [];
+			for ( i = 0; i < param.length; i++ ) {
+				pi = param[i];
+				var op = pi.op;
+				var ddbop;
+				switch ( op ) {
+					default:
+					ddbop = op.charAt(0).toUpperCase() +
+						op.substring(1);
+				}
+				var ddbpi = {};
+				var name = pi.arg[0];
+				if ( tblpref ) pi.arg[0] = tblpref + name;
+				ddbpi[ddbop] =
+					ddbParam[op].apply(null,pi.arg);
+				pi.arg[0] = name;
+				ddbparam.push( ddbpi );
+			}
+			context.ddbcli().transactWrite
+				( { TransactItems: ddbparam }, callback );
+		}
+	} else {
+		i = 0;
+		(function transactMemoryDB(err) {
+			if ( !err && i < param.length ) {
+				pi = param[i++];
+				exports[pi.op]( context, tblpref,
+					pi.arg[0], pi.arg[1], pi.arg[2],
+				transactMemoryDB );
+			} else {
+				callback(err);
+			}
+		})();
+	}
+}
 
 // body and expr are exclusive, if body is empty
 // expr contains update instructions, vice versa
@@ -373,6 +470,7 @@ exports.put = function( context, tblpref, name,
 		body = body[0] === undefined ? body[1] : body[0];
 	}
 
+	var t = key.t;
 	if ( tblpref !== undefined ) {
 		name = getStorageContext( context, tblpref, name,
 		function (err,s,name) {
@@ -380,23 +478,24 @@ exports.put = function( context, tblpref, name,
 			else s.m.put( s.c, context, tblpref, name,
 				key, body, unlock, callback );
 		} );
-		if ( name ) {
-			var item = {};
-			item[key.p] = key.pval;
-			if ( key.s ) item[key.s] = key.sval;
-			Object.assign( item, body );
-			var param = {
-				TableName: name,
-				Item: item
-			};
-			if ( key.sync && !unlock ) {
-				require("canis/awsddb").conditionExpression
-					( param, key.sync, "putExpression" );
-			}
-			context.ddbcli().put( param, callback );
-		}
+		if ( name )
+			context.ddbcli().put( ddbParam.put
+				( name, key, body ), callback );
 	} else {
-		put( context, name, key, body, false, callback );
+		var t = key.t;
+		if ( t ) {
+			key.t = undefined;
+			t.param.push({
+				op: "put",
+				p1: name,
+				p2: object.clone(key),
+				p3: object.clone(body),
+			});
+			key.t = t;
+			setTimeout( callback );
+		} else {
+			put( context, name, key, body, false, callback );
+		}
 	}
 };
 
@@ -425,41 +524,9 @@ exports.update = function( context, tblpref, name,
 			else s.m.put( s.c, context, tblpref, name,
 				key, undefined, unlock, callback, expr );
 		} );
-		if ( name === undefined ) return;
-
-		var awsddb = require( "canis/awsddb" );
-		var Key = {};
-		Key[key.p] = key.pval;
-		if ( key.s ) Key[key.s] = key.sval;
-		var param = {
-			TableName: name,
-			Key: Key
-		};
-		var state;
-		if ( key.sync )
-			state = awsddb.conditionExpression
-				( param, key.sync, "updateExpression", unlock );
-
-		if ( Array.isArray(expr) ) {
-			var action = 0;
-			while ( i < expr.length ) {
-				var e = expr[i++];
-				// prevent null, so null can be used to
-				// specify removal
-				if ( e !== null && typeof e === "object" ) {
-					state = awsddb.updateExpression
-					( param, action, state, e.name, e.value );
-				} else {
-					action = e;
-				}
-			}
-			// don't do this, key only item can be saved
-			//if ( state === undefined ) break;
-		} else if ( typeof expr === "object" ) {
-			awsddb.updateExpression
-			( param, 0, state, expr.name, expr.value );
-		}
-		context.ddbcli().update( param, callback );
+		if ( name )
+			context.ddbcli().update( ddbParam.update
+				(name,key,expr), callback );
 	} else {
 		// expr can be undefined if mutex is supplied,
 		// because mutex automatically appends required
@@ -694,23 +761,23 @@ exports.snapshot = function
 };
 
 
-exports.createDirectory = function(path,callback) {
+exports.createDirectory = function(path,file) {
 	var p;
 	var from = 0, to = -1;
-	var i = path.length;
+	var l = path.length;
+	var i = file? l = path.lastIndexOf("/",l) : l;
 	var p = path;
 	while ( !fs.existsSync( p ) ) {
 		i = p.lastIndexOf( "/", i );
 		if ( i < 0 ) break;
 		p = path.substring(0,i);
 	}
-console.log( path.substring(i) );
-	while ( ++i < path.length ) {
+	while ( ++i < l ) {
 		i = path.indexOf( "/", i );
-		fs.mkdirSync( i < 0 ? path : path.substring(0,i) );
+		fs.mkdirSync( i < 0 ? (i = l, path) :
+			path.substring(0,i) );
 	}
 }
-
 
 exports.open = function ( context, id, path, local ) {
 	function fileName(a,b,c) {
@@ -724,19 +791,22 @@ exports.open = function ( context, id, path, local ) {
 		if ( i > 0 ) {
 			exports.createDirectory( p.substring(0,i) );
 		}
-		try {
-			var fd = fs.openSync( fn,
-				local !== undefined ? local : "w+" );
-			if ( fd >= 0 ) {
-				return {
-					fd: fd,
-					offset: 0
+		var mode = "r+";
+		for ( i = 0 ; i < 2; i++ ) {
+			try {
+				var fd = fs.openSync( fn,
+					local !== undefined ? local : mode );
+				if ( fd >= 0 ) {
+					return {
+						fd: fd,
+						offset: 0
+					}
+//		console.log( p );
+//		fs.mkdirSync( p );
 				}
-	//		console.log( p );
-	//		fs.mkdirSync( p );
+			} catch ( e ) {
 			}
-		} catch ( e ) {
-console.log( e );
+			mode = "w+";
 		}
 	} else {
 /*		if ( local ) {
@@ -745,10 +815,8 @@ console.log( e );
 					"wx+" );
 			if ( ioc ) return ioc;
 		}*/
-console.log( id );
-console.log( path );
 		return {
-			s3 : context.s3(),
+			s3 : context.service("S3"),
 			param : {
 				Bucket : id,
 				Key: path
@@ -765,16 +833,67 @@ exports.close = function ( ioc ) {
 	}
 }
 
-exports.read = function( ioc, callback )
+exports.read = function( ioc, callback, filter )
 {
 	var fd = ioc.fd;
 	if ( fd === undefined ) {
-		ioc.s3.getObject( ioc.param, function(err,data) {
-			if ( !err ) {
-				data.buf = data.Body;
+		var param = ioc.param;
+		if ( filter ) {
+			var expr = "SELECT ";
+			var col = filter.column;
+			if ( col ) {
+// TODO: column is array
+				expr += col;
+			} else {
+				expr += "*";
 			}
-			callback( err, data );
-		} );
+			expr += " from S3Object where " + filter.s;
+			switch ( filter.cond ) {
+				case "contain" : expr += " like '%" + filter.sval + "%'";
+			}
+			param = {
+				Bucket: param.Bucket,
+				Key: param.Key,
+				ExpressionType: "SQL",
+				Expression: expr,
+				InputSerialization: {
+					CSV: {
+						FileHeaderInfo: "USE",
+						RecordDelimiter: "\n",
+						FieldDelimiter: ","
+					}
+				},
+				OutputSerialization: {
+					JSON: {RecordDelimiter:","}
+				}
+			}
+			
+			ioc.s3.selectObjectContent( param, function (err,data) {
+				if ( !err ) {
+					var s = "";
+					data.Payload.on( 'data',
+						function(event) {
+							if ( event.Records )
+								s += event.Records.Payload.toString();
+							else if ( event.End ) {
+								callback( null,
+									JSON.parse( "[" +
+										s.substring(0,s.length-1) + "]" ) );
+							}
+						}
+					);
+				} else {
+					callback(err);
+				}
+			} );
+		} else {
+			ioc.s3.getObject( param, function(err,data) {
+				if ( !err ) {
+					data.buf = data.Body;
+				}
+				callback( err, data );
+			} );
+		}
 	} else {
 		fs.fstat( fd, function(err,st) {
 			if ( err ) {
@@ -801,13 +920,36 @@ exports.write = function( ioc, buf, callback ) {
 			"Body" : buf,
 			"ContentType":"application/octet-stream" };
 		Object.assign( param, ioc.param );
-		ioc.s3.putObject( param, callback );
+		var s3 = ioc.s3;
+		s3.putObject( param, function ( err ) {
+			if ( err && err.code == "NoSuchBucket" ) {
+				s3.createBucket( {
+					Bucket: param.Bucket
+//					CreateBucketConfiguration : {
+//					LocationConstraint:
+//process.env.AWS_DEFAULT_REGION
+//					}
+				}, callback );
+			} else {
+				callback(err);
+			}
+		} );
 	} else {
 		if ( typeof buf === "string" )
 			buf = Buffer.from( buf );
 		fs.write( fd, buf, 0, buf.length,
 			ioc.offset, callback );
 		ioc.offset += buf.length;
+	}
+}
+
+exports.url = function( ioc, callback, expire ) {
+	var fd = ioc.fd;
+	if ( fd === undefined ) {
+		var s3 = ioc.s3;
+		var param = { Expires: expire };
+		Object.assign( param, ioc.param );
+		s3.getSignedUrl('getObject', param, callback );
 	}
 }
 
