@@ -264,8 +264,6 @@ iterateResource( iter, c, i ) {
 			}
 			var path = iter.path + k;
 			iter.progress( iter, exports.EXISTING_PATH, path );
-/*iter.run();
-return;*/
 			id = iter.resource[path];
 		} else {
 			iter.prevCall = undefined;
