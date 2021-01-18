@@ -17,15 +17,17 @@ function( storage, context, tblname, key, callback )
 		},
 		ExpressionAttributeValues: {
 			":v" : key.pval
-		}
+		},
+		Limit: key.limit
 	}, callback );
 };
 
 exports.primaryKeyQuery = function
 	( ddbcli, tblname, key, val, sortkey, sortval, extra, cond, callback )
 {
-	var c = "#k=:v and " + ( cond == null ?
-		"begins_with(#sk,:sv)" : "#sk" + cond + ":sv" );
+	var c = "#k=:v and " +
+		( cond === null ? "begins_with(#sk,:sv)" :
+			"#sk" + (cond? cond : "=" ) + ":sv" );
 	if ( extra ) c += "and :x";
 	ddbcli.query( {
 		TableName: tblname,
@@ -38,7 +40,8 @@ exports.primaryKeyQuery = function
 			":v" : val,
 			":sv" : sortval,
 			":x" : extra
-		}
+		},
+		Limit: key.limit
 	}, callback );
 };
 

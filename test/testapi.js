@@ -1,8 +1,13 @@
+// vim: ts=4 sw=4 :
+// jshint curly:false
+// Copyright (C) 2017, adaptiveflow
+// Distributed under ISC License
+
 exports.body = {
 	"configuration" : {
 		"apiKeyRequired" : true,
 		"lambdaPrefix" : "",
-		"lambdaProxyIntegraton": undefined,
+		"lambdaProxyIntegration": undefined,
 		"lambdaProxyIntegrationInput": undefined,
 		"stage" : {
 			"test1" : {
@@ -36,11 +41,19 @@ exports.body = {
 		},
 		"/world" : {
 			"GET" : {
-				"lambda" : "lambda/world"
+				"lambda" : "lambda/world",
+				"lambdaProxyIntegration" : true
 			}
 		},
 	},
-	"/xyz" : {
+	"/python" : {
+		"GET": {
+			"lambda" : "lambda/hello.py",
+			"lambdaProxyIntegration" : true,
+			"runtime" : "python"
+		}
+	},
+	"" : {
 		"GET": {
 			"path" : "html",
 			"base" : "STATIC_PATH"

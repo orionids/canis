@@ -25,7 +25,8 @@ exports.load = function( file, param ) {
 
 
 
-exports.property = function( o, a ) {
+exports.attribute = function( o, a ) {
+	if ( typeof a === 'string' ) a = a.split(".");
 	for ( var i = 0; i < a.length; i++ ) {
 		if ( o === undefined ) break;
 		o = o[a[i]];
@@ -35,14 +36,17 @@ exports.property = function( o, a ) {
 
 exports.clone = function( o, r )
 {
+	function clone( o, r ) {
+		return r && r.recursive === false ?
+			o : exports.clone( o, r );
+	}
 	if ( o === null ) return null;
 	if ( Array.isArray( o ) ) {
 		var newa = new Array(o.length);
 		for ( var i = 0; i < o.length; i++ ) {
 			var oi = o[i];
 			if ( oi !== undefined ) {
-				if ( ( newa[i] = exports.clone
-					( oi, r ) ) === undefined )
+				if ( ( newa[i] = clone( oi, r ) ) === undefined )
 					return undefined;
 			}
 		}
@@ -55,8 +59,7 @@ exports.clone = function( o, r )
 				var op = o[p];
 				if ( op !== undefined ) {
 					if ( r && r.ctx ) r.ctx.property = p;
-					if ( (newo[p] = exports.clone
-						( o[p], r )) === undefined )
+					if ( (newo[p] = clone( o[p], r )) === undefined )
 						return undefined;
 				}
 			}
@@ -67,6 +70,17 @@ exports.clone = function( o, r )
 	}
 	return o;
 };
+
+exports.move = function(o,attr)
+{
+	var tmp = {};
+	for ( var i = 0; i < attr.length; i++ ) {
+		var a = attr[i];
+		tmp[a] = o[a];
+		delete o[a];
+	}
+	return tmp;
+}
 
 /*
 function

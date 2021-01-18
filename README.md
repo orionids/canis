@@ -1,7 +1,7 @@
 # Canis, Node.js based RESTful web service for Orion project.
 
 ## Introduction
-Orion ( http://orionids.org ) project is aimed to be a general purpose
+Orion ( https://orionids.org ) project is aimed to be a general purpose
 application framework which supports various forms of application
 including web app.
 
@@ -44,6 +44,16 @@ So Canis is a part of Orion project and will support :
 		- Compatible synchronization method
 		- S3 support
 	- object.js, string.js : some utility functions related to objects & strings
+
+## New features in 0.4.4 to 0.5.0
+
+- AWS related
+	- Sending HTML E-mail via SES
+- Code execution
+	- Multi process support
+	- Python support
+- Test enhancement
+	- Postman script generator ( experimental )
 
 ## Known todo list
 - Static files

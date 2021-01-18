@@ -1,17 +1,27 @@
+process.chdir( __dirname );
 var server = require( "canis/server.js" );
-
 console.log( "Type quit() to terminate server" );
-var s = server.main ( "testapi",
+
+// multiple API set so url will be apiset/stage/url, i.e
+// GET /testapi/test1/hello
+var s = server.main ( [ { name: "testweb", alias : "" },
+"testapi" ]
+,
 
 // this parameter is optional
 {
-	parse: // suppy this for interactive mode
+//	fork: server.fork(),
+	cert: {
+//		pub:
+//		pri:
+	},
+	parse: // supply this for interactive mode
 	function(input,quit){
 		try {
 			eval(input);
 		} catch ( e ) {
 			console.log( e );
-			quit(false);
+
 		}
 	},
 	finalize: function() {
@@ -20,5 +30,6 @@ var s = server.main ( "testapi",
 	},
 	port : 5000, // default is 3000
 	client: true // manage clients
+
 } );
 
