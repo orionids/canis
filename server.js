@@ -215,6 +215,13 @@ exports.queryParameter = function(url) {
 	return { param: param, index: index, url: url };
 }
 
+exports.invocationPath = function(basePath, configPath)
+{
+	return configPath?
+		path.isAbsolute(configPath)? configPath :
+		basePath? basePath + "/" + configPath :
+		configPath : basePath;
+}
 
 function
 invokeAPI(context,api,basepath,request,response,param)
@@ -416,8 +423,15 @@ rtctx.aws_request_id = 'reqid'
 					var rtname = m.runtime;
 					if ( rtname === undefined ) {
 						rtname = config.runtime;
-						if ( rtname === undefined )
-							rtname = "nodejs";
+						if ( rtname === undefined ) {
+							switch ( path.extname(lambda) ) {
+								case ".py":
+								rtname = "python";
+								break;
+								default:
+								rtname = "nodejs";
+							}
+						}
 					}
 					var configPath = m.basePath;
 					if ( configPath === undefined )
@@ -427,10 +441,8 @@ rtctx.aws_request_id = 'reqid'
 					// externally submit lambda path
 					invoke.handler( context, rtname,
 						request.lambda? request.lambda : lambda,
-						basepath? configPath?
-							basepath + "/" + configPath :
-							basepath : configPath,
-							m.handler,
+						exports.invocationPath(
+							basepath, configPath), m.handler,
 						ev, rtctx, function(xxx,result) {
 						var type;
 						var stat;

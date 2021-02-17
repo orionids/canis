@@ -2,11 +2,17 @@ var storage = require( "canis/storage" );
 var context = require( "canis/context" );
 
 
+context.service("S3",{
+	endpoint: "http://127.0.0.1:9000",
+	accessKeyId: "admin",
+	s3ForcePathStyle: true,
+	secretAccessKey: "adminadmin"
+})
 
-var ioc = storage.open( context, "resource", "model/name.csv" );
+var ioc = storage.open( context, "my-test-resource", "model/name.csv" );
 if ( ioc ) {
 
-if (0) {
+if (true) {
 	storage.write( ioc,
 		"modelName\nabc\nabcba\nzazaza",
 	function(err) {
@@ -19,9 +25,9 @@ if (0) {
 		console.log( data );
 		console.log( data.buf.toString() );
 	} );*/
-if (1) {
+if (false) {
 	ioc.s3.selectObjectContent( {
-		Bucket: "resource",
+		Bucket: "test-resource",
 		Key: "model/name.csv",
 		ExpressionType: "SQL",
 		Expression: "SELECT modelName from S3Object where Name like '%ab%'",

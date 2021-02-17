@@ -140,14 +140,17 @@ while True:
 	elif action == "init":
 		_path(cmd)
 		src = cmd["src"]
-		log = src.get("log")
 		lst = src.get("fromlist")
-		imp = __import__( src["name"], fromlist=lst )
-		for l in lst:
-			i = getattr(imp,l)
-			log = getattr(i,log if isinstance(log,str) else "log",None )
-			if log:
-				log_edit.append(log)
+		try:
+			imp = __import__( src["name"], fromlist=lst )
+			log = src.get("log")
+			for l in lst:
+				i = getattr(imp,l)
+				log = getattr(i,log if isinstance(log,str) else "log",None )
+				if log:
+					log_edit.append(log)
+		except Exception as e:
+			print( str(e) + " : ", src, lst )
 		io.send({"action":"result"})
 	elif action == "exit":
 		break

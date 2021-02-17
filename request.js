@@ -576,37 +576,36 @@ exports.iterate = function( context, target, symbol,
 exports.basePath = function(tc)
 {
 	var base = tc.base;
-	if ( base !== null && base !== undefined ) return base;
+	if (base !== null && base !== undefined) return base;
 	var apiset = tc.apiSet;
-	if ( apiset ) {
-		if ( Array.isArray(apiset) ) apiset = apiset[0];
+	if (apiset) {
+		if (Array.isArray(apiset)) apiset = apiset[0];
 		var i = apiset.lastIndexOf("/")
-		if ( i > 0 ) return apiset.substring(i);
+		if (i > 0) return apiset.substring(i);
 	}
 }
 
-exports.load = function( context, basepath, filePath, target, serverPath )
+exports.load = function(context, basepath, filePath, target, serverPath)
 {
-	function loadAPI(from,to) {
-		var name = filePath.substring(from,to);
-		var api = server.loadAPI
-			( context, name, serverPath );
-		if ( api )
-			return { api: api, name: name }
+	function loadAPI(from, to) {
+		var name = filePath.substring(from, to);
+		var api = server.loadAPI(context, name, serverPath);
+		if (api)
+			return {api: api, name: name}
 	}
-	if ( serverPath ) {
+	if (serverPath) {
 		var i = filePath.indexOf( "/" );
 		var basePath;
 		var feature = "";
 		if ( i > 0 ) {
 			var apiInfo;
 
-			apiInfo = loadAPI( 0, i )
-			if ( !apiInfo ) {
+			apiInfo = loadAPI(0, i);
+			if (!apiInfo) {
 				var j = filePath.indexOf( "/", ++i );
-				apiInfo = loadAPI( 0, j );
-				if ( !apiInfo ) {
-					apiInfo = loadAPI( i, j );
+				apiInfo = loadAPI(0, j);
+				if (!apiInfo) {
+					apiInfo = loadAPI(i, j);
 					// - <--- XXX
 					feature = apiInfo.name + "-"
 				}
@@ -633,6 +632,6 @@ exports.load = function( context, basepath, filePath, target, serverPath )
 			url: name
 		}
 	}
-	return object.load( basepath + "/" + filePath );
+	return object.load(basepath + "/" + filePath);
 }
 // EOF
