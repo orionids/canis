@@ -914,31 +914,37 @@ exports.read = function( ioc, callback, filter )
 
 exports.write = function( ioc, buf, callback ) {
 	var fd = ioc.fd;
-	if ( fd === undefined ) {
+	if (fd === undefined) {
 		var param = { 
 //"ACL" : "public-read",
 			"Body" : buf,
 			"ContentType":"application/octet-stream" };
-		Object.assign( param, ioc.param );
+		Object.assign(param, ioc.param);
 		var s3 = ioc.s3;
-		s3.putObject( param, function ( err ) {
-			if ( err && err.code == "NoSuchBucket" ) {
-				s3.createBucket( {
-					Bucket: param.Bucket
-//					CreateBucketConfiguration : {
-//					LocationConstraint:
-//process.env.AWS_DEFAULT_REGION
-//					}
-				}, callback );
-			} else {
+		(function put(err) {
+			if (err) {
 				callback(err);
+			} else {
+				s3.putObject(param, function ( err ) {
+					if (err && err.code == "NoSuchBucket") {
+						s3.createBucket({
+							Bucket: param.Bucket
+		//					CreateBucketConfiguration : {
+		//					LocationConstraint:
+		//process.env.AWS_DEFAULT_REGION
+		//					}
+						}, put);
+					} else {
+						callback(err);
+					}
+				});
 			}
-		} );
+		})();
 	} else {
-		if ( typeof buf === "string" )
-			buf = Buffer.from( buf );
-		fs.write( fd, buf, 0, buf.length,
-			ioc.offset, callback );
+		if (typeof buf === "string")
+			buf = Buffer.from(buf);
+		fs.write(fd, buf, 0, buf.length,
+			ioc.offset, callback);
 		ioc.offset += buf.length;
 	}
 }
