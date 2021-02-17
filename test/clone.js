@@ -1,9 +1,12 @@
 var object = require( "canis/object" );
 
 var o = object.clone( {
-	a: 1, b: 2
+	"[W]": "Hello [W]", b: 2
 }, {
-	recursive : false
+	symbol: {
+		"W" : "World"
+	},
+	recursive : true
 });
 
 console.log( o );

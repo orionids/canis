@@ -10,23 +10,26 @@ var context = require( "canis/context" );
 var server = require( "canis/server" );
 var string = require( "canis/string" );
 
-function invokeLambda( prefix, msg, child )
+function
+invokeLambda(prefix, msg, child)
 {
 	var name = msg.name;
-	if ( name.indexOf(prefix) === 0 )
+	if (name.indexOf(prefix) === 0)
 		name = name.substring(prefix.length);
 
-	module.exports( context, name, JSON.parse(msg.ev), 0, function(err,data) {
-		if ( msg.response )
-			child.send( {
+	module.exports(context, name, JSON.parse(msg.ev), 0,
+	function(err, data) {
+		if (msg.response)
+			child.send({
 				action: "result",
 				payload: JSON.stringify(data)
-			} );
+			});
 	})
 }
 
 module.exports =
-function ( context, name, param, flag, callback, config ) {
+function ( context, name, param, flag, callback, config )
+{
 	function invokeLocal ( prefix ) {
 			if ( ! prefix.runtime ) {
 					prefix.runtime = "python"; // XXX
@@ -43,7 +46,8 @@ function ( context, name, param, flag, callback, config ) {
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
 		module.exports.handler( context, prefix.runtime,
-			prefix.lambda, process.cwd() + "/" + prefix.basePath,
+			prefix.lambda, server.invocationPath(
+				process.cwd(), prefix.basePath),
 			prefix.handler, param, rtctx, callback )
 		return;
 		try {
@@ -94,26 +98,26 @@ rtctx.aws_request_id = 'reqid'
 	if ( f !== undefined ) flag = f;
 
 	var prefix;
-	if ( !(flag & module.exports.DISABLE_LOCAL) ) {
+	if (!(flag & module.exports.DISABLE_LOCAL)) {
 		var lambdaTable = context["^"];
-		if ( lambdaTable ) {
+		if (lambdaTable) {
 			var info = lambdaTable[name];
-			if ( info ) {
-				invokeLocal( info );
+			if (info) {
+				invokeLocal(info);
 				return;
 			}
 		}
 		prefix = context.localPrefix;
-		if ( prefix ) {
-			if ( Array.isArray(prefix) ) {
+		if (prefix) {
+			if (Array.isArray(prefix)) {
 
-			} else if ( invokeLocal( prefix ) ) {
+			} else if (invokeLocal(prefix)) {
 				return;
 			}
 		}
 	}
 
-	if ( !(flag & module.exports.DISABLE_REMOTE) ) {
+	if ( false && !(flag & module.exports.DISABLE_REMOTE) ) {
 		// try AWS lambda
 		prefix = context.lambdaPrefix;
 		context.lambda().invoke( {

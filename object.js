@@ -5,18 +5,18 @@
 
 "use strict";
 
-var string = require( "canis/string" );
+var string = require("canis/string");
 
 // __dirname + "/" + relpath to use relative path
 // like 'require' in an arbitrary module
-const path = require( "path" );
-exports.load = function( file, param ) {
-	var module = require( file );
-	if ( path.extname( require.resolve( file ) ) == ".js" ) {
+const path = require("path");
+exports.load = function(file, param) {
+	var module = require(file);
+	if (path.extname(require.resolve(file)) == ".js" ) {
 		module = module.body;
-		if ( module === undefined ) return undefined;
-		if ( typeof module === "function" ) {
-			return module.apply( this, param );
+		if (module === undefined) return undefined;
+		if (typeof module === "function") {
+			return module.apply(this, param);
 
 		}
 	}
@@ -25,48 +25,48 @@ exports.load = function( file, param ) {
 
 
 
-exports.attribute = function( o, a ) {
-	if ( typeof a === 'string' ) a = a.split(".");
-	for ( var i = 0; i < a.length; i++ ) {
-		if ( o === undefined ) break;
+exports.attribute = function(o, a) {
+	if (typeof a === 'string') a = a.split(".");
+	for (var i = 0; i < a.length; i++) {
+		if (o === undefined) break;
 		o = o[a[i]];
 	}
 	return o;
 };
 
-exports.clone = function( o, r )
+exports.clone = function(o, r)
 {
-	function clone( o, r ) {
+	function clone(o, r) {
 		return r && r.recursive === false ?
-			o : exports.clone( o, r );
+			o : exports.clone(o, r);
 	}
-	if ( o === null ) return null;
-	if ( Array.isArray( o ) ) {
+	if (o === null) return null;
+	if (Array.isArray(o)) {
 		var newa = new Array(o.length);
-		for ( var i = 0; i < o.length; i++ ) {
+		for (var i = 0; i < o.length; i++) {
 			var oi = o[i];
-			if ( oi !== undefined ) {
-				if ( ( newa[i] = clone( oi, r ) ) === undefined )
+			if (oi !== undefined) {
+				if ((newa[i] = clone(oi, r)) === undefined)
 					return undefined;
 			}
 		}
 		return newa;
-	} else switch ( typeof o ) {
+	} else switch (typeof o) {
 		case "object":
 		var newo = {}; 
-		for ( var p in o ) {
-			if ( o.hasOwnProperty(p) ) {
+		for (var p in o) {
+			if (o.hasOwnProperty(p)) {
 				var op = o[p];
-				if ( op !== undefined ) {
-					if ( r && r.ctx ) r.ctx.property = p;
-					if ( (newo[p] = clone( o[p], r )) === undefined )
+				if (op !== undefined) {
+					if (r && r.ctx) r.ctx.property = p;
+					if ((newo[typeof p === "string"? string.resolve(p, r.symbol, r.ctx) : p] = clone(o[p], r)) === undefined)
 						return undefined;
 				}
 			}
 		}
 		return newo;
 		case "string":
-		if ( r ) return string.resolve( o, r.symbol, r.ctx );
+		if (r) return string.resolve(o, r.symbol, r.ctx);
 	}
 	return o;
 };
@@ -74,39 +74,10 @@ exports.clone = function( o, r )
 exports.move = function(o,attr)
 {
 	var tmp = {};
-	for ( var i = 0; i < attr.length; i++ ) {
+	for (var i = 0; i < attr.length; i++) {
 		var a = attr[i];
 		tmp[a] = o[a];
 		delete o[a];
 	}
 	return tmp;
 }
-
-/*
-function
-lock( mutex, f )
-{
-	if ( mutex.lock ) {
-		var stack = mutex.stack;
-		if ( stack === undefined ) {
-			mutex.stack = [ f ];
-		} else {
-			stack.push( f );
-		}
-	} else {
-		mutex.lock = true;
-		f();
-	}
-}
-
-function
-unlock( mutex, f )
-{
-	var stack = mutex.stack;
-	if ( stack && stack.length > 0 ) {
-		stack.pop()();
-	} else {
-		mutex.lock = false;
-	}
-}
-*/
