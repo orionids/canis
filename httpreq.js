@@ -5,42 +5,46 @@
 
 "use strict";
 module.exports = function(mod, o, f) {
-	try {
-		let req = mod.request(o, function(res) {
-			let r = "";
-			res.on("data", function(d) {
-				r += d;
-			} );
-			res.on("end", function() {
-				if (res.statusCode != 200) {
-					f ( {
-						statusCode: res.statusCode,
-						message: r
-					} );
-				} else {
-					if (o.json) {
-						try {
-							r = JSON.parse(r);
-						} catch (e) {
-							f (e);
-							return;
-						}
-					}
-					f(null, r, res);
-				}
-			});
-		});
-		if (o.data !== undefined)
-			req.write(o.data);
-		else if (o.body !== undefined) {
-			req.write(JSON.stringify(o.body));
-		}
+    try {
+        let req = mod.request(o, function(res) {
+            var r = [];
+            res.on("data", function(d) {
+                r.push(d);
+            } );
+            res.on("end", function() {
+                r = Buffer.concat(r);
+                if (res.headers["content-type"].startsWith(
+                    "text/"))
+                    r = r.toString();
+                if (res.statusCode != 200) {
+                    f ( {
+                        statusCode: res.statusCode,
+                        message: r
+                    }, null, res);
+                } else {
+                    if (o.json) {
+                        try {
+                            r = JSON.parse(r);
+                        } catch (e) {
+                            f (e, null, res);
+                            return;
+                        }
+                    }
+                    f(null, r, res);
+                }
+            });
+        });
+        if (o.data !== undefined)
+            req.write(o.data);
+        else if (o.body !== undefined) {
+            req.write(JSON.stringify(o.body));
+        }
 
-		req.on("error", function(e) {
-			f( e );
-		});
-		req.end();
-	} catch (e) {
-		f(e);
-	}
+        req.on("error", function(e) {
+            f( e );
+        });
+        req.end();
+    } catch (e) {
+        f(e);
+    }
 };

@@ -6,13 +6,23 @@
 'use strict'
 var object = require( "canis/object" )
 
+var htmlutil = require("canis/htmlutil")
+
 exports.testCase;
 var headers
 
+function
+format(s)
+{
+    if (process.env.OUTPUT_FORMAT == "html")
+        return htmlutil.json(s);
+    return s;
+}
+
 exports.writeHead = function (s,h) {
 	headers = h;
-	console.log( "----- RESPONSE  (status " +
-		s + ")-----", JSON.stringify(h,null,3) );
+	console.log( "----- RESPONSE (status " +
+		s + ")-----", format(JSON.stringify(h,null,3)) );
 }
 
 function
@@ -44,27 +54,35 @@ exports.write = function ( result ) {
 		}
 	}
 	var r;
-	if ( result ) {
+	var tc = exports.testCase;
+    var tcres = tc.result;
+	if (result) {
 		r = result.charAt(result.search(/\S|$/)) == '{' ?
 			JSON.parse(result) : result;
-		console.log( JSON.stringify( r, null, 2 ) );
+        // tc.response function can edit response
+		var json = tc && tc.response? tc.response(r) : r;
+		if (json) {
+			console.log(format(JSON.stringify(json, null, 3)));
+        } else {
+            console.log("Error in response")
+            postproc = undefined;
+        }
 	} else {
 		r = {};
 	}
-	var tc = exports.testCase;
-	if ( tc !== undefined ) {
+	if (tc !== undefined) {
 		var s = tc.symbol;
-		if ( s ) {
+		if (s) {
 			var resolved = tc.resolved;
-			if ( resolved === undefined )
+			if (resolved === undefined)
 				resolved = tc.resolved = {};
-			for ( var a in s ) {
-				resolved[a] = object.attribute(r,s[a]);
+			for (var a in s) {
+				resolved[a] = object.attribute(r, s[a]);
 			}
 		}
-		if ( tc.result ) {
+		if (tcres) {
 			tc.getvar = getvar;
-			tc.result( {headers:headers,body:r}, function(r) {
+			tcres( {headers:headers, body:r}, function(r) {
 				console.log( tc.method, tc.url, ": " + (r? "success" : "FAIL") );
 				next();
 			});

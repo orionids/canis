@@ -104,9 +104,7 @@ throw new Error( "Unexpected operator " + key.cond );
 				( this, context, name, key, callback );
 			} else {
 				require( "canis/awsddb" ).primaryKeyQuery
-				( context.ddbcli(), name,
-				key.p, key.pval, key.s, key.sval,
-				key.extra, key.cond, callback );
+				( this, context.ddbcli(), name, key, callback );
 			}
 		}
 	} else {
