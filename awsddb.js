@@ -23,24 +23,29 @@ function( storage, context, tblname, key, callback )
 };
 
 exports.primaryKeyQuery = function
-	( ddbcli, tblname, key, val, sortkey, sortval, extra, cond, callback )
+	( storage, ddbcli, tblname, key, callback )
 {
+	var cond = key.cond;
 	var c = "#k=:v and " +
 		( cond === null ? "begins_with(#sk,:sv)" :
 			"#sk" + (cond? cond : "=" ) + ":sv" );
+	var extra = key.extra;
 	if ( extra ) c += "and :x";
 	ddbcli.query( {
+		IndexName: storage.getIndexName(key),
 		TableName: tblname,
 		KeyConditionExpression: c,
 		ExpressionAttributeNames: {
-			"#k" : key,
-			"#sk" : sortkey,
+			"#k" : key.p,
+			"#sk" : key.s,
 		},
 		ExpressionAttributeValues: {
-			":v" : val,
-			":sv" : sortval,
+			":v" : key.pval,
+			":sv" : key.sval,
 			":x" : extra
 		},
+// TODO consider this option
+//		Select: "COUNT",
 		Limit: key.limit
 	}, callback );
 };

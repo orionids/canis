@@ -47,7 +47,7 @@ storage.transact( context, pref, [
 				p: "threadId",
 				pval: "12345",
 				s: "date",
-				sval: "1974-02-26",
+				sval: "1983-03-26",
 			},
 			{
 				content: "Hello"
@@ -62,7 +62,7 @@ storage.transact( context, pref, [
 				p: "threadId",
 				pval: "123456",
 				s: "date",
-				sval: "1974-02-27",
+				sval: "1983-03-27",
 			}, {
 				name: "a",
 				value: 1

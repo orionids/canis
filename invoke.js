@@ -6,9 +6,17 @@
 
 var list;
 var child_process;
-var context = require( "canis/context" );
-var server = require( "canis/server" );
-var string = require( "canis/string" );
+var context = require("canis/context");
+var server = require("canis/server");
+var string = require("canis/string");
+var object = require("canis/object");
+var commLog = false;
+
+if (process.platform == "win32") {
+	var fs = require("fs");
+	var pathLib = require("path");
+	var pathEnv = process.env.PATH.split(pathLib.delimiter);
+}
 
 function
 invokeLambda(prefix, msg, child)
@@ -47,7 +55,7 @@ rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
 		module.exports.handler( context, prefix.runtime,
 			prefix.lambda, server.invocationPath(
-				process.cwd(), prefix.basePath),
+				process.cwd(), string.path(prefix.basePath)),
 			prefix.handler, param, rtctx, callback )
 		return;
 		try {
@@ -143,47 +151,75 @@ rtctx.aws_request_id = 'reqid'
 	}
 };
 
+function
+matchPath(filename, pathenv, plain) {
+	if (!plain && process.platform === "win32" &&
+		!pathLib.extname(filename)) filename += ".exe";
+	if (pathenv === undefined)
+		pathenv = process.env.PATH.split(pathLib.delimiter);
+
+	for (var i in pathenv) {
+		var fn = pathenv[i] + pathLib.sep + filename;
+		if (fs.existsSync(fn)) return fn;
+	}
+}
+
 module.exports.DISABLE_LOCAL = 0x1;
 module.exports.DISABLE_REMOTE = 0x2;
-module.exports.handler = function( context, rtname, src,
-	path, handlerName, ev, rtctx, callback )
+module.exports.handler = function(
+	context, rtname, src, path, handlerName, ev, rtctx, callback)
 {
 	var rt;
+	var rtpath;
 	var idle;
 	var child;
 	function registerOnClose() {
-		idle = { child: child };
-		child.on( "close", function() {
-			list.unlinkCircularNode( idle );
+		idle = {child: child};
+		child.on("close", function() {
+			list.unlinkCircularNode(idle);
 			// XXX callback with error
-		} );
+		});
 	}
 	function activate() {
-		list.linkCircularNode( rt.active, idle );
+		list.linkCircularNode(rt.active, idle);
 	}
 	function sendInvoke() {
 		child.callback = callback; // XXX is this needed ?
-		child.send( { action: "invoke", src: src,
-			path: path, handler: handlerName, ev: ev, ctx: rtctx } );
+		child.send({
+			action: "invoke",
+			src: src,
+			path: rtpath,
+			handler: handlerName,
+			altered: {
+				name: "utrun", /* XXX this should be variable */
+				package: undefined
+			},
+			ev: ev,
+			ctx: rtctx
+		});
 	}
 	var fork = context.get("fork");
-	if ( fork === undefined ) {
+
+	if (path && path.startsWith("/cygdrive/"))
+		path = path.charAt(10) + ':' + path.substring(11);
+
+	if (fork === undefined) {
 		try {
-			require( path? path + "/" + src : src )
-				[handlerName ? handlerName : "handler"]
-				( ev, rtctx, callback );
-		} catch ( e ) {
-			throw ( e );
+			require(path? path + "/" + src : src)[
+				handlerName ? handlerName : "handler"]
+				(ev, rtctx, callback);
+		} catch (e) {
+			throw (e);
 		}
 	} else {
 		var runtime = fork.runtime;
-		if ( runtime === undefined )
+		if (runtime === undefined)
 			runtime = fork.runtime = {};
 		rt = runtime[rtname];
 		for (;;) {
-			if ( rt === undefined )
+			if (rt === undefined)
 				runtime[rtname] = rt = {};
-			else if ( rt.idle )
+			else if (rt.idle)
 				break;
 
 			var head = {};
@@ -196,99 +232,112 @@ module.exports.handler = function( context, rtname, src,
 		}
 
 		idle = rt.idle.next;
-		if ( idle !== rt.idle ) {
-			list.unlinkCircularNode( idle );
+		if (idle !== rt.idle) {
+			list.unlinkCircularNode(idle);
 			child = idle.child;
 		} else {
-			if ( child_process === undefined ) {
-				child_process = require( "child_process" );
-				list = require( "canis/list" );
+			if (child_process === undefined) {
+				child_process = require("child_process");
+				list = require("canis/list");
 			}
 
 			var dispatchMessage = function(msg) {
-				switch ( msg.action ) {
+				switch (msg.action) {
 					case "result":
-					child.callback( msg.err, msg.data );
+					child.callback(msg.err, msg.data);
 					break;
 					case "reuse":
-					list.unlinkCircularNode( idle );
-					if ( fork.reuse ) {
-						console.log( "REUSING PROCESS" ); //XXX
-						list.linkCircularNode
-							( rt.idle, idle );
+					list.unlinkCircularNode(idle);
+					if (fork.reuse) {
+						console.log("REUSING PROCESS"); //XXX
+						list.linkCircularNode(rt.idle, idle);
 					} else {
-						child.send( { action: "exit" } );
+						child.send({action: "exit"});
 					}
 					break;
 					case "invoke":
-					invokeLambda( rtctx.lambdaPrefix,
-						msg, child );
+					invokeLambda(
+						rtctx.lambdaPrefix, msg, child);
 				}
 			};
 
 			// XXX number of processes should be limited
-			if ( rtname === "nodejs" ) {
-				child = child_process.fork
-					( __dirname + "/handler" );
-				child.on( "message", dispatchMessage );
+			if (rtname === "nodejs") {
+				child = child_process.fork(
+					__dirname + "/handler");
+				child.on("message", dispatchMessage);
 			} else {
-				var arg = [];
-				if ( rt.ext )
-					arg.push( __dirname +
-						"/runtime/invoke." + rt.ext );
-				if ( rt.callback )
-					arg.push( rt.callback );
+				var rtparam = {
+					symbol: [
+						rt.symbol,
+						{ "path": path },
+						process.env
+					]
+				}
+				var arg = rt.arg? object.clone(
+					rt.arg, rtparam) : [];
+				if (rt.ext) arg.push(
+                    __dirname + "/runtime/invoke." + rt.ext);
+				if (rt.callback) arg.push(rt.callback);
+                if (rt.extra) {
+                    arg.push(".")
+                    arg = arg.concat(rt.extra);
+                }
+                rtparam.partial = true;
+				rtpath = rt.path? object.clone(
+					rt.path, rtparam) : {};
+				if (rtpath.major)
+					rtpath.major.unshift(path);
+				else
+					rtpath.major = [path];
+
+				var exname = rt.exec? rt.exec : rtname
 				child = child_process.spawn(
-					rt.exec? rt.exec : rtname, arg,
-					{ stdio: [ "pipe", "pipe", 2 ] } );
+					process.platform != "win32" ? exname:
+					matchPath(exname, pathEnv, false, pathLib),
+					arg, {stdio: ["pipe", "pipe", 2]});
 				var chunk = [];
 				var size, current = 0;
 				child.stdout.on("data", function(d) {
-//					chunk.push( data );
-//console.log( data.slice(0,4),
-// );
-					while ( true ) {
-						if ( size === undefined ) {
+					while (true) {
+						if (size === undefined) {
 							current += d.length;
-							if ( current < 4 ) {
+							if (current < 4) {
 								chunk.push(d);
 								return;
 							}
-							if ( chunk.length > 0 ) {
+							if (chunk.length > 0) {
 								d = Buffer.concat(chunk);
 								chunk = [];
 							}
-							if ( current == 4 ) {
-				//				size = parseInt
-				//					(d.toString("hex"),16);
-	if ( false  ) console.log( ">>>>> only size field received :", size );
+							if (current == 4) {
+	if ( commLog) console.log( ">>>>> only size field received :", size );
 								return;
 							}
-							size = parseInt( d.slice(0,4).
-								toString("hex"),16);
+							size = parseInt(d.slice(0,4).toString("hex"),16);
 							d = d.slice(4);
 							current = 4;
-	if ( false ) console.log( ">>>>> size ", size,"with payload : ", d.length );
+	if ( commLog) console.log( ">>>>> size ", size,"with payload : ", d.length );
 						}
 						current += d.length;
-						if ( current >= size ) {
+						if (current >= size) {
 							var dispatchPacket = function() {
 								dispatchMessage(
-									JSON.parse(Buffer.concat(chunk)) );
+									JSON.parse(Buffer.concat(chunk)));
 								chunk = [];
 								size = undefined;
 								current = 0;
 							};
-							if ( current > size ) {
+							if (current > size) {
 								var end = d.length +
 									size - current;
 								chunk.push(d.slice(0,end));
-	if ( false ) console.log( ">>>>> Exceeding payload received, end=", end );
+	if (commLog) console.log( ">>>>> Exceeding payload received, end=", end );
 								dispatchPacket();
 								d = d.slice(end);
 								continue;
 							} else {
-	if ( false ) console.log( ">>>>> Exact payload received" );
+	if ( commLog) console.log( ">>>>> Exact payload received" );
 								chunk.push(d);
 								dispatchPacket();
 							}
@@ -306,7 +355,7 @@ module.exports.handler = function( context, rtname, src,
 					}
 				});
 
-				child.send = function( o ) {
+				child.send = function(o) {
 					var s = Buffer.from(JSON.stringify(o));
 					var b = Buffer.alloc(4);
 					b.writeUInt32BE(s.length);
@@ -314,28 +363,35 @@ module.exports.handler = function( context, rtname, src,
 					child.stdin.write(s);
 				};
 				var init = rt.init;
-				if ( init ) {
+				if (init) {
 					registerOnClose();
 					activate();
-					var i = 0;
+					/*var i = 0;
 					(function initialize() {
-						if ( i < init.length ) {
+						if (i < init.length) {
 							child.callback = initialize;
-							child.send( { action: "init",
+							child.send({
+								action: "init",
 								src: init[i],
 								path: path
-							} );
+							});
 							i++;
 						} else {			
 							sendInvoke();
 						}
-					})();
+					})();*/
+					child.callback = sendInvoke;
+					child.send( { action: "init",
+						src: init,
+						path: path
+					} );
 					return;
 				}
 			}
 			registerOnClose();
 		}
 		activate();
+		rtpath = { major: [path] }
 		sendInvoke();
 	}
 }

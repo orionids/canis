@@ -1,4 +1,4 @@
-// vim: ts=4 sw=4 :
+// vim: ts=4 sw=4 noet :
 // jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
@@ -17,18 +17,19 @@ process.on( 'uncaughtException', function (err,origin) {
 	console.log( origin );
 } );
 
-exports.stage = function ( config, url, ctx ) {
+exports.stage = function (config, url, ctx)
+{
 	var stage;
 	for (;;) {
 		var i = ctx.i;
-		if ( i === undefined ) i = 0;
-		if ( config.stage !== undefined ) {
+		if (i === undefined) i = 0;
+		if (config.stage !== undefined) {
 			// ignore preceding path separator to find stage
-			if ( url.charAt(ctx.i) == '/' ) ctx.i = i + 1;
-			stage = match ( config.stage, url, ctx );
-			if ( stage !== undefined ) {
+			if (url.charAt(ctx.i) == '/') ctx.i = i + 1;
+			stage = match (config.stage, url, ctx);
+			if (stage !== undefined) {
 				var apikey = stage.apiKey;
-				if ( apikey !== undefined ) {
+				if (apikey !== undefined) {
 					ctx.apiKey = apikey;
 					break;
 				}
@@ -47,20 +48,40 @@ exports.stage = function ( config, url, ctx ) {
 function
 match( api, url, ctx ) {
 	var start = ctx.i;
-	var i = url.indexOf( "/", start + 1 );
-	ctx.i = i;
-	ctx.prev = start;
-	ctx.part = url.substring
-		( start, i > 0 ? i : undefined );
-	// include api == null or api === undefined
-	if ( api == undefined ) return null;
+	if (start < 0) {
+        // this means root (/) API of an element in API set is called
+		ctx.part = "/";
+	} else {
+		var i = url.indexOf("/", start + 1);
+		ctx.i = i;
+		if (i >=0) {
+			var j = i + 1;
+			for (;;) {
+				var next = url.charAt(j++);
+				if (next == "?" || next == "") {
+					ctx.i = -1;
+					break;
+				}
+				if (next != "/") break;
+			}
+		}
+/*        if (i >= url.length - 1) {
+			ctx.i = -1;
+			return api;
+		}*/
+		ctx.prev = start;
+		ctx.part = url.substring
+			(start, i > 0 ? i : undefined);
+		// include api == null or api === undefined
+		if (api == undefined) return null;
+	}
 	return api[ctx.part];
 }
 
 function
-resource( m, stage, p, response, config, param )
+resource( m, stage, url, baseLength, response, config, param )
 {
-	function result(fn, data) {
+	function result(fn, data, r) {
 		var type = "text/html";
 		var index = fn.lastIndexOf(".");
 		if ( index > 0 ) {
@@ -88,20 +109,37 @@ resource( m, stage, p, response, config, param )
 				type = "application/x-font-woff";
 			}
 		}
-		response.writeHead(200, {
+		var header = {
 			'Content-Type' : type
-			/*"application/octet-stream"*/ });
+		};
+		var code;
+		if (r) {
+			if (r.code !== undefined) code = r.code;
+			if (r.header !== undefined)
+				Object.assign(header, r.header);
+		} else {
+			code = 200;
+		}
+		response.writeHead(
+			code === undefined? 200 : code, header);
 		response.write( data );
 		response.end();
 	}
 
 	function index(name,next) {
-		var fn = p + "/" + name;
+		var fn = filePath + "/" + name;
 		fs.readFile( fn, function(err,data) {
-			if ( err ) {
+			if (err) {
 				next();
 			} else {
-				result( fn, data );
+				var i = url.lastIndexOf('/');
+				var p = i < 0? url : url.substring(i);
+				if (p.charAt(p.length - 1) != '/')
+					p += '/';
+				result(fn, data, {
+					code: 307,
+					header: {'Location': "." + p + name}
+				});
 			}
 		} );
 	}
@@ -115,22 +153,23 @@ resource( m, stage, p, response, config, param )
 		response.end();
 	}
 
-	if ( stage ) p = "/" + stage + p;
-	p = m.path + p;
+	var p = url.substring(baseLength);
+	var filePath = m.path + (
+		stage? "/" + stage + "/" + p : p);
 	var base = m.base;
 	if ( base ) base = process.env[base];
 	if ( !base ) base = m.basePath;
-	if ( base ) p = base + "/" + p;
-	p = path.normalize( p );
-	if ( p.charAt(0) == "." ) {
-		console.log( "Suspicious request using relative path :", p );
+	if ( base ) filePath = base + "/" + filePath;
+	filePath = path.normalize( filePath );
+	if ( filePath.charAt(0) == "." ) {
+		console.log( "Suspicious request using relative path :", filePath );
 		notFound();
-	} else if ( param.ignore && param.ignore.exec(p) ) {
-		console.log( "ignored :" + p );
+	} else if ( param.ignore && param.ignore.exec(filePath) ) {
+		console.log( "ignored :" + filePath );
 		notFound();
 	} else {
-		console.log( log.position(), "STAGE=", stage, p );
-		fs.readFile( p, function(err,data) {
+		console.log( log.position(), "STAGE=", stage, filePath );
+		fs.readFile( filePath, function(err,data) {
 			if ( err ) {
 //				do {
 				if ( err.code == "EISDIR" ) {
@@ -154,7 +193,7 @@ resource( m, stage, p, response, config, param )
 				}
 //				} while ( 0 );
 			} else {
-				result(p, data);
+				result(filePath, data);
 			}
 		} );
 	}
@@ -195,6 +234,7 @@ options( api, hdr, response, param )
 		"Access-Control-Allow-Methods" : m
 	}) );
 	response.end();
+	return 0;
 }
 
 exports.queryParameter = function(url) {
@@ -224,29 +264,52 @@ exports.invocationPath = function(basePath, configPath)
 }
 
 function
-invokeAPI(context,api,basepath,request,response,param)
+invokeAPI(
+context, api, basepath, request, response, param, matched)
 {
+	function addPathParameter(name, all) {
+		var s;
+		var base;
+		if (all) {
+			ctx.i = -1;
+			last--;
+			s = url;
+			base = ctx.prev;
+		} else {
+			s = ctx.part;
+			base = 0;
+		}
+		if (pathParameters === undefined)
+			pathParameters = {};
+		// automatically transfer path parameter without mapping template
+		pathParameters[name] = s.substring(base + 1);
+	}
+	var pathParameters; // pathParameter is undefined if no path parameters in AWS
+
 	var url = request.url;
-	if ( !url ) return;
-	var ctx = {};
+	if (!url) throw new Error("NO_URL");
+	var ctx = {i: 0};
 	var a;
+	var base;
+	var last = 0;
 	var ev = {};
 
-	if ( !param ) param = {};
+	if (!param) param = {};
 
 	var apiInfo;
-	if ( param.apiInfo && request.headers ) {
-		apiInfo = param.apiInfo(request.headers);
-	}
-	if ( !apiInfo ) apiInfo = {};
+	if (param.apiInfo && request.headers)
+		apiInfo = param.apiInfo(request.headers, url, ctx);
+	if (!apiInfo) apiInfo = {};
 
-	if ( api.apiSet ) {
-		if ( apiInfo.set ) {
-			api = api[apiInfo.set];
+	if (api.apiSet) {
+		var name = apiInfo.set;
+		if (name) {
+			api = api[name];
 		} else {
-			ctx.i = 1;
-			a = match( api, url, ctx );
-			if ( a === undefined ) {
+			ctx.i += 1;
+			a = match(api, url, ctx);
+			name = ctx.part;
+			if (a === undefined) {
 				// check there is anonymous api set
 				api = api[""];
 				ctx = {};
@@ -254,259 +317,245 @@ invokeAPI(context,api,basepath,request,response,param)
 				api = a;
 			}
 		}
-		if ( api === undefined ) {
-			console.log( "Unknown API set", ctx.part );
-			return;
-		}
+		if (api === undefined)
+			throw new Error("UNKNOWN_API_SET." + name);
 	}
 
 	var config = api.configuration;
-	if ( config === undefined ) config = {};
+	if (config === undefined) config = {};
 
 	var stage = apiInfo.stage;
-	if ( stage ) {
+	if (stage) {
 		var sctx = config.stage[stage];
-		if ( sctx === undefined ) {
-			console.log( "Unknown stage", stage );
-		}
-		if ( ctx.i == undefined ) ctx.i = 0;
+		if (sctx === undefined)
+			throw new Error("UNKNOWN_EXPLICIT_STAGE.", stage);
+		if (ctx.i == undefined) ctx.i = 0;
 		ctx.apiKey = sctx.apiKey;
 	} else {
-		if ( exports.stage
-			( config, url, ctx ) === undefined ) {
-			console.log( "Unknown stage", ctx.part ); // XXX
-			return;
+		if (exports.stage(config, url, ctx) === undefined) {
+			throw new Error("UNKNOWN_STAGE.", ctx.part); // XXX
 		}
 		stage = ctx.part;
 	}
 
-	var qp = exports.queryParameter( url )
+	var baseLength = ctx.prev + ctx.part.length;
+	var qp = exports.queryParameter(url)
 	var queryParam = qp.param;
 	url = qp.url;
 
 	var requestContext = {
 		stage : ctx.part,
-		resourcePath : url.substring( ctx.i ),
+		resourcePath : url.substring(ctx.i),
 		httpMethod: request.method
 	};
-	var pathParameters; // pathParameter is undefined if no path parameters in AWS
-	function addPathParameter( name ) {
-		if ( pathParameters === undefined )
-			pathParameters = {};
-		// automatically transfer path parameter without mapping template
-		pathParameters[name] = ctx.part.substring( 1 );
-	}
 
 	for (;;) {
-		a = match ( api,url, ctx );
-		if ( a === undefined ) { // path parameter
+		a = match(api, url, ctx);
+		if (a === undefined) { // path parameter
 			a = api["?"]; // get alias of path parameter
-			if ( a === null ) {
+			if (a === null) {
 				a = undefined;
 				break;
-			} else if ( a === undefined ) {
-				for ( var prop in api ) {
-					if ( prop.charAt(1) == '{' ) {
-						var name = prop.substring( 2, prop.length - 1  );
-						addPathParameter( name );
+			} else if (a === undefined) {
+				for (var prop in api) {
+					last = prop.length - 1;
+					if (prop.charAt(1) == '{' &&
+						prop.charAt(last) == '}') {
+						var all = prop.charAt(last - 1) == '+';
+						var name = prop.substring(2, last);
+						addPathParameter(name, all);
 						// add alias to avoid loop next time
 						a = api[prop];
 						api["?"] = {
 							name: name,
-							child: a
+							child: a,
+							all: all
 						};
 						break;
 					}
 				}
-				if ( a === undefined ) {
+				if (a === undefined) {
 					api["?"] = null;
 					break;
 				}
 			} else {
-				addPathParameter( a.name );
+				addPathParameter(a.name, a.all);
 				a = a.child;
 			}
 		}
-		if ( ctx.i < 0 ) break;
+		if (matched) matched.push(ctx.part);
+		if (ctx.i < 0) break;
 		api = a;
 	}
 	var m;
-	if ( a !== undefined ) {
+	if (a !== undefined) {
 		m = a[request.method];
-		if ( m !== undefined ) {
-			if ( m.apiKeyRequired == true ||
-			  ( m.apiKeyRequired != false && config.apiKeyRequired == true ) ) {
-				if ( ctx.apiKey !== undefined ) {
-					if ( request.headers['x-api-key'] != ctx.apiKey ) {
-						console.log( "API key mismatch", request.headers['x-api-key'], ctx.apiKey );
-						return;
-					}
+		if (m !== undefined) {
+			if (m.apiKeyRequired == true ||
+			  (m.apiKeyRequired != false && config.apiKeyRequired == true)) {
+				if (ctx.apiKey !== undefined) {
+					if (request.headers['x-api-key'] != ctx.apiKey)
+						throw new Error("API_KEY_MISMATCH." + request.headers['x-api-key'] + "." +  ctx.apiKey);
 				}
 			}
-			try {
-				var lambda = m.lambda;
-				var chunk = [];
-				request.on('data', function(d) {
-					chunk.push(d);
-				} );
-				request.on('end', function() {
-					var lpi = m.lambdaProxyIntegration;
-					if ( lpi === undefined ) lpi = config.lambdaProxyIntegration;
-					var lpii = m.lambdaProxyIntegrationInput;
-					if ( lpii === undefined ) lpii = config.lambdaProxyIntegrationInput;
+			var lambda = m.lambda;
+			var chunk = [];
+			request.on('data', function(d) {
+				chunk.push(d);
+			} );
+			request.on('end', function() {
+				var lpi = m.lambdaProxyIntegration;
+				if (lpi === undefined) lpi = config.lambdaProxyIntegration;
+				var lpii = m.lambdaProxyIntegrationInput;
+				if (lpii === undefined) lpii = config.lambdaProxyIntegrationInput;
 
-					var hdr = request.headers;
-					var str = Buffer.concat(chunk);
-					outer:
-					for (;;) {
-						for ( var h in hdr ) {
-							if ( h.toLowerCase() ===
-									"content-type" ) {
-								h = hdr[h];
-								var i = h.indexOf(";");
-								if ( i >= 0 )
-									h = h.substring
-										(0,i).trim();
-								i = h.indexOf("/");
-								var sub;
-								if ( i >= 0 ) {
-									sub = h.substring(i + 1);
-									h = h.substring(0,i);
-								} else {
-									sub = "";
-								}
-								switch ( h  ) {
-									case "multipart":
-									str = str.toString
-										("base64");
-									ev.isBase64Encoded =
-										true;
-									break outer;
-								}
-								break;
+				var hdr = request.headers;
+				var str = Buffer.concat(chunk);
+				outer:
+				for (;;) {
+					for (var h in hdr) {
+						if (h.toLowerCase() ===
+							"content-type") {
+							h = hdr[h];
+							var i = h.indexOf(";");
+							if (i >= 0)
+								h = h.substring
+									(0,i).trim();
+							i = h.indexOf("/");
+							var sub;
+							if (i >= 0) {
+								sub = h.substring(i + 1);
+								h = h.substring(0,i);
+							} else {
+								sub = "";
 							}
+							switch (h) {
+								case "multipart":
+								str = str.toString
+									("base64");
+								ev.isBase64Encoded =
+									true;
+								break outer;
+							}
+							break;
 						}
-						str = str.toString();
-						break;
 					}
-					if ( lpi || lpii ) {
-						ev.body = str;
-						ev.queryStringParameters = queryParam;
-						ev.requestContext = requestContext;
-						ev.pathParameters = pathParameters;
-					} else {
+					str = str.toString();
+					break;
+				}
+				if ( lpi || lpii ) {
+					ev.body = str;
+					ev.queryStringParameters = queryParam;
+					ev.requestContext = requestContext;
+					ev.pathParameters = pathParameters;
+				} else {
+					if (str)
 						try {
 							ev.body = JSON.parse(str);
-						} catch ( e ) {
-//XXX
+						} catch (e) {
 						}
-						Object.assign( ev, pathParameters );
-						ev.stage = requestContext.stage;
-						ev.path = requestContext.resourcePath;
+					Object.assign(ev, pathParameters);
+					ev.stage = requestContext.stage;
+					ev.path = requestContext.resourcePath;
 ev.params = pathParameters;
 ev.queries = queryParam;
-					}
-					ev.headers = hdr;
-					var fn = m.lambdaName;
-					if ( !fn ) {
-						fn = lambda.substring
-							(lambda.lastIndexOf("/") + 1);
-					}
-					var rtctx = {
-						functionName: fn,
-						lambdaPrefix: string.resolveCache( config, "lambdaPrefix" )
-					};
-					Object.assign( rtctx, param.context );
+				}
+				ev.headers = hdr;
+				var fn = m.lambdaName;
+				if ( !fn ) {
+					fn = lambda.substring
+						(lambda.lastIndexOf("/") + 1);
+				}
+				var rtctx = {
+					functionName: fn,
+					lambdaPrefix: string.resolveCache(config, "lambdaPrefix")
+				};
+				Object.assign(rtctx, param.context);
 
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
-					var rtname = m.runtime;
-					if ( rtname === undefined ) {
-						rtname = config.runtime;
-						if ( rtname === undefined ) {
-							switch ( path.extname(lambda) ) {
-								case ".py":
-								rtname = "python";
-								break;
-								default:
-								rtname = "nodejs";
-							}
+				var rtname = m.runtime;
+				if (rtname === undefined) {
+					rtname = config.runtime;
+					if (rtname === undefined) {
+						switch (path.extname(lambda)) {
+							case ".py":
+							rtname = "python";
+							break;
+							default:
+							rtname = "nodejs";
 						}
 					}
-					var configPath = m.basePath;
-					if ( configPath === undefined )
-						configPath = config.basePath;
-					// request.lambda is not a regular attr
-					// so no security issue to
-					// externally submit lambda path
-					invoke.handler( context, rtname,
-						request.lambda? request.lambda : lambda,
-						exports.invocationPath(
-							basepath, configPath), m.handler,
-						ev, rtctx, function(xxx,result) {
-						var type;
-						var stat;
-						var hdr;
-						if ( lpi ) {
-							stat = result.statusCode;
-							hdr = result.headers;
-							result = result.body;
-							// XXX case when result has headers
-						} else {
-							stat = 200;
-						}
+				}
+				var configPath = m.basePath;
+				if (configPath === undefined)
+					configPath = config.basePath;
+				// request.lambda is not a regular attr
+				// so no security issue to
+				// externally submit lambda path
+				invoke.handler(context, rtname,
+					request.lambda? request.lambda : lambda,
+					exports.invocationPath(
+						basepath, configPath), m.handler,
+					ev, rtctx, function(xxx,result) {
+					var type;
+					var stat;
+					var hdr;
+					if (lpi) {
+						stat = result.statusCode;
+						hdr = result.headers;
+						result = result.body;
+						// XXX case when result has headers
+					} else {
+						stat = 200;
+					}
 //https://github.com/feross/is-buffer/blob/master/index.js
-						if ( typeof result === 'object' ) {
-							result = JSON.stringify( result );
-							type = 'application/json';
-						} else if ( m.header === undefined ||
-							(type = m.header["Content-Type"]) === undefined ) {
-							type = "text/plain";
-						}
+					if (typeof result === 'object') {
+						result = JSON.stringify(result);
+						type = 'application/json';
+					} else if (m.header === undefined ||
+						(type = m.header["Content-Type"]) === undefined) {
+						type = "text/plain";
+					}
 if ( xxx ) { // XXX more test is needed for exception case
-	console.log( xxx );
+console.log( xxx );
 } else {
-						response.writeHead(stat,
-							corsHeader( request.headers,
-								param, hdr? hdr : {
-									'Content-Type' : type
-								} ) );
-						if ( result )
-							response.write( result );
-						response.end();
+					response.writeHead(stat,
+						corsHeader(request.headers,
+							param, hdr? hdr : {
+								'Content-Type' : type
+							}));
+					if (result)
+						response.write(result);
+					response.end();
 }
-					} );
-				} );
-				request.on('error', function(e) {
-					console.log( e ); // XXX do response here
 				});
-				return 0;
-			} catch ( e ) {
-				console.log( e );
-			}
+			});
+			request.on('error', function(e) {
+				console.log( e ); // XXX do response here
+			});
+			return m;
 		} else {
-			if ( request.method === "OPTIONS" )
-				options( a, request.headers, response, param );
-			else
-				console.log
-					( "Unknown method " + request.method );
+			if (request.method === "OPTIONS")
+				return options(a, request.headers, response, param);
+			throw new Error(
+				"UNKNOWN_METHOD." + request.method);
 		}
 	} else {
 		a = api[""];
 //console.log( "ROOT entry--", a, url.substring( ctx.prev ) );
 //		m = a[request.method];
-		if ( a && (m = a[request.method] ) && m.path ) {
-			resource( m, stage, url.substring( ctx.prev ),
-				response, config, param );
+		if (a && (m = a[request.method] ) && m.path)  {
+			resource(m, stage, url, baseLength, response, config, param);
 		} else {
-			console.log( "Unknown API " + request.url );
+			throw new Error("UNKNOWN_API." + request.url);
 		}
 	}
 }
 exports.match = match;
 exports.invoke = invokeAPI;
 
-exports.registerLambda = function(context, apiLambdaTable,basePath)
+exports.registerLambda = function(context, apiLambdaTable, basePath)
 {
 	if ( apiLambdaTable ) {
 		var lambdaTable = context["^"];
@@ -546,8 +595,14 @@ console.log( e ); // resolve this XXX not to use console.log : above doesn't wor
 }
 
 exports.run = function(context,apiset,basepath,param) {
-	function dispatch( request, response ) {
-		invokeAPI( context, apiset, basepath, request, response, param );
+	function dispatch(request, response) {
+		try {
+			invokeAPI(
+				context, apiset, basepath,
+				request, response, param);
+		} catch (e) {
+			console.log(e);
+		}
 	}
 
 	if ( apiset ) {
@@ -672,8 +727,9 @@ console.log( "send exit" );
 			var rtl = Object.keys(fork.runtime);
 			var rti = 0;
 			(function clearRuntime() {
-				if ( rti < rtl.length ) {
+				while ( rti < rtl.length ) {
 					var rt = rtl[rti++];
+					if (rt.active === undefined) continue;
 					var active = rt.active.next;
 					if ( active != rt.active ) {
 						// XXX wait few seconds  for active
@@ -689,47 +745,47 @@ console.log( "send exit" );
 						clearChildren( rt.idle,
 							clearRuntime );
 					}
-				} else {
-					finalize();
+					return;
 				}
+				finalize();
 			})();
 		} else {
 			finalize();
 		}
 	}
 	var run;
-	if ( typeof param === "function" ) {
+	if (typeof param === "function") {
 		run = param;
-	} else if ( param ) {
+	} else if (param) {
 		run = param.run;
-		if ( param.parse ) {
-			var readline = require( "readline" );
+		if (param.parse) {
+			var readline = require("readline");
 			rl = readline.createInterface({
 				input: process.stdin,
 				output: process.stdout
 			});
-            rl.on( "SIGINT", function() {
-				param.parse(null,terminate);
-            } );
+            rl.on("SIGINT", function() {
+				param.parse(null, terminate);
+            });
 			(function interactive() {
 				var p = param.prompt;
 				rl.question(p? p : "> ", function (input) {
 					var state;
 					try {
 						param.parse(input,function(pause) {
-							if ( pause === false )
+							if (pause === false)
 								interactive();
-							else if ( !pause )
+							else if (!pause)
 								terminate();
 							state = true;
 						});
-					} catch ( e ) {
-						console.log( e );
+					} catch (e) {
+						console.log(e);
 					}
-					if ( state === undefined )
+					if (state === undefined)
 						interactive();
-				} );
-			} )();
+				});
+			})();
 		}
 	}
 	if ( !run ) run = exports.run;
@@ -738,36 +794,36 @@ console.log( "send exit" );
 	var apiset;
 	const cwd = process.cwd();
 
-	if ( Array.isArray(apidef) ) {
+	if (Array.isArray(apidef)) {
 		apiset = { apiSet: true };
-		for ( var i = 0; i < apidef.length; i++ ) {
+		for (var i = 0; i < apidef.length; i++) {
 			var alias = undefined;
 			var name = apidef[i];
-			if ( typeof name === "object" ) {
+			if (typeof name === "object") {
 				alias = name.alias;
 				name = name.name;
 			}
-			if ( alias === undefined ) {
+			if (alias === undefined) {
 				var end = name.lastIndexOf(".");
-				if ( end < 0 ) end = undefined;
+				if (end < 0) end = undefined;
 				alias = name.substring
-					( name.lastIndexOf( "/" ) + 1, end );
+					(name.lastIndexOf("/") + 1, end);
 			}
-			var a = exports.loadAPI(context,name,cwd);
-			if ( a === undefined ) return undefined;
-			if ( a === null ) {
+			var a = exports.loadAPI(context, name, cwd);
+			if (a === undefined) return undefined;
+			if (a === null) {
 				apiset = null;
 				break;
 			}
 			apiset[alias] =	a;
 		}
 	} else {
-		apiset = exports.loadAPI(context,apidef,cwd);
+		apiset = exports.loadAPI(context, apidef, cwd);
 	}
 
-	if ( apiset === undefined ) return undefined;
-	var r = run( context, apiset, cwd, param );
-	if ( r !== undefined ) return r;
+	if (apiset === undefined) return undefined;
+	var r = run(context, apiset, cwd, param);
+	if (r !== undefined) return r;
 	// so below default api run will do nothing
 	return false;
 };
