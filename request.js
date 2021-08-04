@@ -12,6 +12,7 @@ var object = require( "canis/object" );
 var parser = require( "canis/parser" );
 var context = require( "canis/context" );
 var server = require( "canis/server" );
+var iterator = require("canis/iterator");
 var path = require("path");
 
 function
@@ -64,8 +65,9 @@ invokeLambda(api,symbol,request,response,local)
 		}, api.configuration );
 }
 
-exports.https = function
-( context, api, basepath, request, response, param ) {
+exports.https = function(
+	context, api, basepath, request, response, param)
+{
 	var httpreq, https, symbol;
 	if ( param ) {
 		httpreq = param.httpreq;
@@ -116,27 +118,27 @@ exports.local = function
 ( context, api, basepath, request, response, param ) {
 	var symbol;
 	if ( param ) symbol = param.symbol;
-	if ( request.method == "INVOKE" ) {
-		context.fork = param.fork;
-		invokeLambda(api,symbol,request,response, true);
-	} else {
-		clone( request, symbol, function (r) {
-			if( r ) {
-				r.on = function(n,f) {
-					switch ( n ) {
-						case "data" :
-						f( Buffer.from( r.body === undefined? "" :
-							JSON.stringify(r.body,0,2) ) );
-						break;
-						case "end": f(); break;
-					}
-				};
-				if ( r.urlStage ) r.url = r.urlStage + r.url;
-				return server.invoke( context, api, basepath, r, response, param );
-			}
-	// XXX exception
-		} );
-	}
+	clone(request, symbol, function (r) {
+		if ( r.method == "INVOKE" ) {
+			context.fork = param.fork;
+			invokeLambda(api,symbol,r,response, true);
+		} else {
+				if( r ) {
+					r.on = function(n,f) {
+						switch ( n ) {
+							case "data" :
+							f( Buffer.from( r.body === undefined? "" :
+								JSON.stringify(r.body,0,2) ) );
+							break;
+							case "end": f(); break;
+						}
+					};
+					if ( r.urlStage ) r.url = r.urlStage + r.url;
+					return server.invoke( context, api, basepath, r, response, param );
+				}
+		// XXX exception
+		}
+	});
 };
 
 function
@@ -362,6 +364,13 @@ postman_generate(context,request,param)
 //		r = c + "\"" + r.replace(/\t/g,"\\t" ).
 }
 
+function
+upperFirst(s)
+{
+	var i = s.charAt(0) == '/'? 1 : 0;
+	return s.charAt(i).toUpperCase() + s.substring(i + 1);
+}
+
 exports.postman = function
 	( context, api, basepath, request, response, param ) {
 	var symbol;
@@ -373,119 +382,113 @@ exports.postman = function
 
 
 exports.resolve = function
-	( server, api, base, request, response, param )
+	( context, api, base, request, response, param )
 {
-
-	function modify( s, op ) {
-		if ( s ) {
-			switch ( op ) {
-				case "lower": return s.toLowerCase();
-				case "upper": return s.toUpperCase();
-				case "upperFirst":
-				case "camel":
-				return s.charAt(0).toUpperCase() +
-					s.substring(1);
+	function modify(s, op) {
+		if (s) {
+			for (var o in op) {
+				switch (op[o]) {
+					case "lower": s = s.toLowerCase(); break;
+					case "upper": s = s.toUpperCase(); break;
+					case "upperFirst":
+					s = upperFirst(s);
+					break;
+					case "camel":
+					var pc = parser.context(s);
+					var t;
+					s = parser.token(pc);
+					while ((t= parser.token(pc))) {
+						s += upperFirst(t);
+					}
+					break;
+				}
 			}
 		}
 		return s;
 	}
 
-//	console.log( Object.keys(param) )
+	var method;
+	var matched = [];
 	var resolve = param.resolve;
 
-	var symbol = object.clone
-		( param.symbol, { recursive: false } );
-	if ( symbol ) {
+	var symbol = object.clone(
+		param.symbol, {recursive: false});
+	if (symbol) {
 		var f, target;
-		if ( Array.isArray( symbol ) ) {
+		if (Array.isArray(symbol)) {
 			target = {}
-			symbol.push( target );
+			symbol.push(target);
 		} else {
 			target = symbol;
 			f = symbol['?']
 		}
 		target['?'] = function(ctx,s) {
-		/*	if ( s.startsWith( "API_PATH" ) ) {
-				var resolved, sep;
-				var path;
-				var op;
-				var i = s.indexOf( ".", 8 );
-				if ( i > 0 ) {
-					op = s.substring( i + 1 );
-				} else {
-					i = s.length;
-				}
-				var from;
-				from = s.indexOf("_ONLY",8) == 8 ? 13 : 8;
-				sep = from < i ? s.charAt(from) : "";
-				var matched = resolve.matched;
-				for ( i = 0; i < matched.length; i++ ) {
-					var m = matched[i];
-					if ( i == 0 ) resolved = m;
-					else resolved += sep + m;
-				}
-				return resolved;
-			}*/
 			var pc = parser.context(s);
 			var name = parser.token(pc);
-			var op;
+			var op = [];
 			var val;
-			var sep;
 			var last;
 
-			while ( (last=parser.last(pc)) == '.' || last == '=' ) {
+			while ((last = parser.last(
+				pc)) == '.' || last == '=') {
 				var operand = parser.token(pc);
-				if ( operand ) {
-					if ( last == '.' ) op = operand;
+				if (operand) {
+					if (last == '.') op.push(operand);
 					else val = operand;
 				} else {
-					sep = last;	
 				}
 			}
-			if ( sep === undefined ) sep = last;
 
-			var path;
-			switch ( name ) {
-				case "API_PATH_ONLY": path = true;
+			var pathOnly;
+			switch (name) {
+				case "API_PATH_ONLY": pathOnly = true;
 				case "API_PATH":
-				var matched = resolve.matched;
 				var resolved;
-				for ( var i = 0; i < matched.length; i++ ) {
+				for (var i = 0; i < matched.length; i++) {
 					var m = matched[i];
-					if ( path && m.charAt(0) == '{' )
-						continue;
-					if ( resolved === undefined )
-						resolved = op == "camel" ?
-							m : modify(m,op);
-					else
-						resolved += sep + modify(m,op);
+					if (pathOnly) {
+						if (m.charAt(1) == '{') continue;
+						m = m.substring(1);
+					}
+					resolved = resolved === undefined?
+						(op == "camel" ? m : modify(m,op)) :
+						(resolved + modify(
+							pathOnly? last + m : m,op));
 				}
 				return resolved;
 				case "API_METHOD":
 				return modify(request.method,op);
+				case "LAMBDA_PATH":
+				var l = method.lambda;
+				return l.substring(
+					0, l.length - path.extname(l).length);
 				case "LAMBDA_HANDLER":
 				return "lambda_handler"; // XXX
 				case "LAMBDA_RUNTIME":
 				return "python3.8"; // XXX
 				default:
-				if ( name.startsWith("ARG") ) {
+				if (name.startsWith("ARG")) {
 					// XXX ARG support
-					if ( val ) return val;
+					if (val) return val;
 				} else {
 					var r = string.symbol(name,param.symbol);
-					if ( val !== undefined ) {
-						if ( r != val ) return undefined;
+					if (val !== undefined) { // there is conditional value
+						if (r != val) return undefined; // resolved value doesn't match conditional value
 					}
-					return modify(r,op);
+					return modify(
+						r === undefined? name : r, op);
 				}
 			}
 			//if ( f ) return f( ctx, s );
 		}
 	}
-	clone( request, param.symbol, function (r) {
+	clone(request, param.symbol, function (r) {
 		// XXX dup code
-		if ( r.urlStage ) r.url = r.urlStage + r.url;
-		server.invoke( api, base, r, response, param, param.resolve );
+		if (r.urlStage) r.url = r.urlStage + r.url;
+		// to get matched, call server.invoke
+		r.on = function() {};
+		method = server.invoke(
+			context, api, base, r, response, param, matched);
 
 		var t = 0;
 		var template = resolve.template;
@@ -585,47 +588,68 @@ exports.basePath = function(tc)
 	}
 }
 
-exports.load = function(context, basepath, filePath, target, serverPath)
+exports.load = function(
+	context, basepath, filePath, target, lambdaInfo)
 {
-	function loadAPI(from, to) {
-		var name = filePath.substring(from, to);
+	var serverPath;
+	function loadAPI(name) {
 		var api = server.loadAPI(context, name, serverPath);
 		if (api)
 			return {api: api, name: name}
 	}
-	if (serverPath) {
+	if (lambdaInfo) {
 		var i = filePath.indexOf( "/" );
-		var basePath;
+		var basePathConf;
 		var feature = "";
+		var handler;
+		var type;
+		var feature;
+		if (typeof lambdaInfo === 'object') {
+			serverPath = lambdaInfo.serverPath;
+			handler = lambdaInfo.handlerName;
+			type = lambdaInfo.type;
+			feature = lambdaInfo.feature;
+		} else {
+			serverPath = lambdaInfo;
+			handler = undefined;
+		}
 		if ( i > 0 ) {
 			var apiInfo;
 
-			apiInfo = loadAPI(0, i);
+			apiInfo = loadAPI(
+				type? type : filePath.substring(0, i));
 			if (!apiInfo) {
 				var j = filePath.indexOf( "/", ++i );
-				apiInfo = loadAPI(0, j);
+				apiInfo = loadAPI(type && feature?
+					type + "/" + feature : filePath.substring(0, j));
 				if (!apiInfo) {
-					apiInfo = loadAPI(i, j);
+					apiInfo = loadAPI(
+						feature? feature : filePath.substring(i, j));
 					// - <--- XXX
 					feature = apiInfo.name + "-"
 				}
 			}
 
-			basePath = apiInfo.api.configuration.basePath;
+			basePathConf = apiInfo.api.configuration.basePath;
 			serverPath += "/" + apiInfo.name;
 		}
 
 		var index = filePath.lastIndexOf("/");
 		var name = feature + ( index >= 0 ? filePath.substring(index + 1 ) : filePath );
-		var src = basepath + "/" + filePath + ".py";
-		src = path.normalize(src);
+		var src = path.normalize(string.path(basepath)) +
+			path.sep + filePath + ".py";
 		var cwd = process.cwd();
+		src = (process.platform === "win32"?
+			src.toLowerCase().indexOf(cwd.toLowerCase()) :
+			src.indexOf(cwd)) == 0 ?
+			src.substring(cwd.length + 1) : src;
 		server.registerLambda( context, {
 			[name] : {
-				lambda : src.indexOf(cwd) == 0 ?
-					src.substring(cwd.length + 1) : src
+				lambda : process.platform === "win32"?
+					src.replace(/\\/g,"/") : src,
+				handler: handler
 			}
-		}, basePath );	
+		}, basePathConf );
 		return {
 			apiSet: serverPath,
 			method: "INVOKE",
@@ -634,4 +658,53 @@ exports.load = function(context, basepath, filePath, target, serverPath)
 	}
 	return object.load(basepath + "/" + filePath);
 }
+
+exports.traverse = function(
+	base, attr, recursive, progress, callback)
+{
+	var executed = {};
+	do {
+		var space = object.load(base);
+		if (!attr || (space = object.attribute(space, attr)))
+			break;
+		if (!recursive) return;
+	} while (0);
+	var iter = new iterator(progress)
+
+	return (function add(space) {
+		iter.add(space.length, space, function(iter, test, i) {
+			try {
+				var t = test[i];
+				var path = t.path;
+				if (t.run == "recursive") {
+//					if (path === undefined)
+//						path = recursive;
+//					console.log(fs.readdirSync(path));
+				} else {
+					if (executed[path] != true) {
+						executed[path] = true;
+
+						callback( base + "/" + t.path, t.input,
+						function(response) {
+							// XXX evaluate result
+							if (t.test)
+								add(t.test);
+	console.log(path);
+							iter.run();
+						} )
+					} else {
+						console.log("EXE", path, i);
+						process.exit(1);
+					}
+				}
+			} catch(e) {
+				console.log("---",e);
+				return iterator.END;
+			}
+			return iterator.PENDING;
+		});
+		return iter;
+	})(space);
+}
 // EOF
+//
