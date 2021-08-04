@@ -15,7 +15,6 @@ var param;
 		var ddblocal = process.env.DYNAMODB_LOCAL;
 		if ( ddblocal != "" ) //aws.config.update( { endpoint: ddblocal } );
 		param? param.endpoint = ddblocal : { endpoint: ddblocal };
-console.log( param );
 		aws.config.update( param );
 	}
 }

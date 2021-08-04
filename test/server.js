@@ -1,10 +1,12 @@
+var context = require("canis/context")
+
 process.chdir( __dirname );
 var server = require( "canis/server.js" );
 console.log( "Type quit() to terminate server" );
 
 // multiple API set so url will be apiset/stage/url, i.e
 // GET /testapi/test1/hello
-var s = server.main ( [ { name: "testweb", alias : "" },
+var s = server.main ( context, [ { name: "testweb", alias : "" },
 "testapi" ]
 ,
 

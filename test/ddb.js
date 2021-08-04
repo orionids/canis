@@ -1,3 +1,4 @@
+// vim: ts=4 sw=4 noet :
 var context = require( "canis/context" );
 var storage = require( "canis/storage" );
 var pref = process.env.TABLE_PREFIX;

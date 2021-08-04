@@ -7,10 +7,11 @@
 // task timeout if initialization is done in lambda handler
 // when lambda in running on AWS server ( no problem in local ),
 // so do this here
-var aws = require( "canis/awssdk" ).initialize();
+var aws = require("canis/awssdk").initialize();
 
-module.exports = function() {
-	Object.assign( this, module.exports );
+module.exports = function()
+{
+	Object.assign(this, module.exports);
 	this._entity = {};
 };
 
@@ -22,7 +23,7 @@ module.exports.aws = function () {
 
 module.exports.ddbcli = function () {
 	var ddbcli = this._entity._ddbcli;
-	if ( !ddbcli ) {
+	if (!ddbcli) {
 		ddbcli = new aws.DynamoDB.DocumentClient();
 		this._entity._ddbcli = ddbcli;
 	}
@@ -31,16 +32,17 @@ module.exports.ddbcli = function () {
 
 module.exports.lambda = function () {
 	var lambda = this._entity._lambda;
-	if ( !lambda ) {
+	if (!lambda) {
 		lambda = new aws.Lambda();
 		this._entity._lambda = lambda;
 	}
 	return lambda;
 };
 
-module.exports.service = function(name,param) {
+module.exports.service = function(name,param)
+{
 	var service = this._entity[name];
-	if ( !service ) {
+	if (!service) {
 		service = new aws[name](param);
 		this._entity[name] = service;
 	}
@@ -57,15 +59,15 @@ module.exports.module = function (name,loc,lazy) {
 	var entity = this._entity;
 	function r() {
 		var m = entity[name];
-		if ( m !== undefined ) {
+		if (m !== undefined) {
 			//console.log( name + ": cached=======" );
 			return m;
 		}
 		//console.log( name + ": required=======" );
-		return ( entity[name] = require( loc + "/" + name ) );
+		return (entity[name] = require(loc + "/" + name));
 	}
-	if ( typeof loc === "string" ) {
-		if ( lazy === undefined ) return r();
+	if (typeof loc === "string") {
+		if (lazy === undefined) return r();
 		this[lazy] = r; // so call context[lazy]() for lazy binding
 	} else {
 		//console.log( name + ": self registered=======" );
@@ -75,7 +77,7 @@ module.exports.module = function (name,loc,lazy) {
 
 module.exports.set = function(name,value)
 {
-	if ( value === undefined ) delete this._entity[name];
+	if (value === undefined) delete this._entity[name];
 	else this._entity[name] = value;
 };
 
@@ -87,11 +89,11 @@ module.exports.get = function(name)
 module.exports.delay = function(prop,f,param)
 {
 	var delay = this.get(prop);
-	if ( delay !== undefined ) {
+	if (delay !== undefined) {
 		this.setProperty(prop);
-		setTimeout( function () {
-			f.apply( this, param );
-		}, delay );
+		setTimeout(function () {
+			f.apply(this, param);
+		}, delay);
 		return true;
 	}
 };

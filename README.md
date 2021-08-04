@@ -45,7 +45,7 @@ So Canis is a part of Orion project and will support :
 		- S3 support
 	- object.js, string.js : some utility functions related to objects & strings
 
-## New features in 0.4.4 to 0.5.0
+## New features in 0.4.4 to 0.5.1
 
 - AWS related
 	- Sending HTML E-mail via SES
@@ -54,6 +54,9 @@ So Canis is a part of Orion project and will support :
 	- Python support
 - Test enhancement
 	- Postman script generator ( experimental )
+- Useful features
+    - Google OTP
+    - JSON html
 
 ## Known todo list
 - Static files
