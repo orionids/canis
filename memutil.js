@@ -1,4 +1,4 @@
-// vim: ts=4 sw=4 : noet
+// vim: ts=4 sw=4 noet :
 // jshint curly:false
 // Copyright (C) 2021, adaptiveflow
 // Distributed under ISC License
@@ -16,12 +16,12 @@ exports.MEM_SPECIAL_CHAR = 0xff;
 
 exports.OP_BYTE = function(val, b)
 {
-    return ((val) + ((b) - 1)) / (b);
+	return ((val) + ((b) - 1)) / (b);
 }
 
 exports.OP_ALIGN = function(val, b)
 {
-    return exports.OP_BYTE(val, b) * b;
+	return exports.OP_BYTE(val, b) * b;
 }
 
 
@@ -29,14 +29,14 @@ var mask = [0x00, 0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f];
 var mem_src_align = [0, 8, 4, 8, 2, 8, 4, 8, 1];
 
 exports.memConvert = function(
-    dest, src, len, dest_table, src_table,
-    dest_nbit, src_nbit, flag)
+	dest, src, len, dest_table, src_table,
+	dest_nbit, src_nbit, flag)
 {
-    var src_len = len;
+	var src_len = len;
 	if (src_len > 0) {
 		var dest_bit, src_bit, dest_full, dest_empty,
 			src_full, src_empty;
-        var dest_index = 0, src_index = 0;
+		var dest_index = 0, src_index = 0;
 		var  l = 0;
 		var dest_char = 0, src_char = 0; // actually src_char need not to be initialized
 		if (flag & exports.MEM_FLAG_LOW_TO_HIGH) {
@@ -78,10 +78,10 @@ exports.memConvert = function(
 									dest[dest_index++] = dest_char;
 							}
 						}
-                        return {
-                            length: l,
-                            code: 0
-                        };
+						return {
+							length: l,
+							code: 0
+						};
 					}
 
 					src_char = src[src_index];
@@ -92,26 +92,26 @@ exports.memConvert = function(
 							break;
 							case exports.MEM_REDUCED_SOURCE:
 							var lb = src_table[0];
-                            src_char = src_char < lb ||
+							src_char = src_char < lb ||
 								src_char >= src_table[1]?
 								exports.MEM_SPECIAL_CHAR :
-					    		src_table[src_char - lb + 2];
+								src_table[src_char - lb + 2];
 							break;
 							default: /* MEM_DESTINATION */
 							var found = src_table.indexOf(
 							 src_char );
 							src_char = found < 0? exports.MEM_SPECIAL_CHAR :
-							    found;
+								found;
 						}
 						if (src_char == exports.MEM_SPECIAL_CHAR) {
-                            result = {
-                                length: l,
-                                code: exports.FLAG_SPECIAL | src[src_index]
-                            };
+							result = {
+								length: l,
+								code: exports.FLAG_SPECIAL | src[src_index]
+							};
 
 							if (flag & exports.MEM_FLAG_SPECIAL_CHAR_INDEX)
 								result.index = len - src_len;
-                            return result;
+							return result;
 						}
 					}
 					src_index++;
@@ -146,14 +146,30 @@ exports.memConvert = function(
 
 		}
 	}
-    return {
-        length: 0,
-	    code: 0
-    }
+	return {
+		length: 0,
+		code: 0
+	}
 }
 
 exports.memDestBufferSize = function(dest_nbit, src_nbit, len)
 {
 	return exports.OP_ALIGN(exports.OP_BYTE(
-        len * src_nbit,dest_nbit), mem_src_align[dest_nbit]);
+		len * src_nbit,dest_nbit), mem_src_align[dest_nbit]);
+}
+
+exports.memSetClipboard = function(data, callback)
+{
+	var cmd;
+	switch (process.platform) {
+		case "darwin":  cmd = "pbcopy"; break;
+		case "win32": cmd = "orion -[wclip] -q"; break;
+		default: cmd = "xclip";
+	}
+	require("child_process").exec(
+		"echo -n " + data + "|" + cmd, {
+		shell: process.env.SHELL
+	}, function(err, stdout, stderr) {
+		callback();
+	})
 }
