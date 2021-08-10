@@ -1,4 +1,4 @@
-// vim:ts=4 sw=4:
+// vim:ts=4 sw=4 noet:
 // jshint curly:false
 // Copyright (C) 2018, adaptiveflow
 // Distributed under ISC License
@@ -184,11 +184,12 @@ module.exports.handler = function(
 		list.linkCircularNode(rt.active, idle);
 	}
 	function sendInvoke() {
-		child.callback = callback; // XXX is this needed ?
 		child.send({
 			action: "invoke",
 			src: src,
-			path: rtpath,
+			init: rt.init,
+			path: path,
+			rtpath: rtpath,
 			handler: handlerName,
 			altered: {
 				name: "utrun", /* XXX this should be variable */
@@ -244,7 +245,7 @@ module.exports.handler = function(
 			var dispatchMessage = function(msg) {
 				switch (msg.action) {
 					case "result":
-					child.callback(msg.err, msg.data);
+					callback(msg.err, msg.data);
 					break;
 					case "reuse":
 					list.unlinkCircularNode(idle);
@@ -273,23 +274,19 @@ module.exports.handler = function(
 						{ "path": path },
 						process.env
 					]
-				}
+				};
 				var arg = rt.arg? object.clone(
 					rt.arg, rtparam) : [];
 				if (rt.ext) arg.push(
-                    __dirname + "/runtime/invoke." + rt.ext);
+					__dirname + "/runtime/invoke." + rt.ext);
 				if (rt.callback) arg.push(rt.callback);
-                if (rt.extra) {
-                    arg.push(".")
-                    arg = arg.concat(rt.extra);
-                }
-                rtparam.partial = true;
+				if (rt.extra) {
+					arg.push(".")
+					arg = arg.concat(rt.extra);
+				}
+				rtparam.partial = true;
 				rtpath = rt.path? object.clone(
 					rt.path, rtparam) : {};
-				if (rtpath.major)
-					rtpath.major.unshift(path);
-				else
-					rtpath.major = [path];
 
 				var exname = rt.exec? rt.exec : rtname
 				child = child_process.spawn(
@@ -362,36 +359,10 @@ module.exports.handler = function(
 					child.stdin.write(b);
 					child.stdin.write(s);
 				};
-				var init = rt.init;
-				if (init) {
-					registerOnClose();
-					activate();
-					/*var i = 0;
-					(function initialize() {
-						if (i < init.length) {
-							child.callback = initialize;
-							child.send({
-								action: "init",
-								src: init[i],
-								path: path
-							});
-							i++;
-						} else {			
-							sendInvoke();
-						}
-					})();*/
-					child.callback = sendInvoke;
-					child.send( { action: "init",
-						src: init,
-						path: path
-					} );
-					return;
-				}
 			}
 			registerOnClose();
 		}
 		activate();
-		rtpath = { major: [path] }
 		sendInvoke();
 	}
 }
