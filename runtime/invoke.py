@@ -15,15 +15,6 @@ def _cygtodos(path):
 	return path[10] + ':' + path[11:] if path.startswith(
 		"/cygdrive/") else path
 
-def _path(cmd):
-	path = cmd.get("path")
-	if type(path) == dict:
-		def _cvt(name):
-			return [_cygtodos(p) for p in path.get(name, [])]
-		sys.path =  _cvt("major") + sys.path + _cvt("minor")
-	elif path:
-		sys.path.insert(0, _cygtodos(path))
-
 def _color(c):
 	if os.environ.get("OUTPUT_FORMAT") == "html":
 		if c == "reset":
@@ -38,25 +29,34 @@ def _color(c):
 	return "\033[" + ( "95" if c is None else c ) + "m"
 
 def initialize(cmd):
-	_path(cmd)
-	for src in cmd["src"]:
-		lst = src.get("fromlist")
-		try:
-			imp = __import__(
-				src["name"], fromlist=lst)
-		except:
-			continue
-		log = src.get("log")
-		param = src.get("param")
-		for l in lst:
-			i = getattr(imp, l, None)
-			if i:
-				p = getattr(i, log, None)
-				if p:
-					log_edit.append(p)
-				p = getattr(i, "initialize", None)
-				if p:
-					p(param)
+	path = cmd.get("rtpath")
+	if path:
+		def _cvt(name):
+			return [_cygtodos(p) for p in path.get(name, [])]
+		sys.path =  _cvt("major") + sys.path + _cvt("minor")
+	path = cmd.get("path")
+	if path:
+		sys.path.insert(0, _cygtodos(path))
+
+	init = cmd.get("init")
+	if init:
+		for src in init:
+			lst = src.get("fromlist")
+			try:
+				imp = __import__(src["name"], fromlist=lst)
+			except Exception as e:
+				raise e
+			log = src.get("log")
+			param = src.get("param")
+			for l in lst:
+				i = getattr(imp, l, None)
+				if i:
+					p = getattr(i, log, None)
+					if p:
+						log_edit.append(p)
+					p = getattr(i, "initialize", None)
+					if p:
+						p(param)
 
 if __name__ == "__main__":
 	def log(p):
@@ -197,7 +197,7 @@ if __name__ == "__main__":
 		action = cmd["action"]
 		if action == "invoke":
 			_notify("before_lambda")
-			_path(cmd)
+			initialize(cmd)
 			path, name = _module_info(cmd["src"])
 #			sys.path.append('/home/dan.park/opt/pycharm-2020.3.3/plugins/python/helpers/pycharm')
 			if path:
@@ -268,9 +268,6 @@ if __name__ == "__main__":
 				if t != mt and t.daemon is not True:
 					t.join()
 			io.send({"action": "reuse"})
-		elif action == "init":
-			initialize(cmd)
-			io.send({"action": "result"})
 		elif action == "exit":
 			break
 	_notify("after_loop")

@@ -153,7 +153,7 @@ resource( m, stage, url, baseLength, response, config, param )
 		response.end();
 	}
 
-	var p = url.substring(baseLength);
+	var p = baseLength ? url.substring(baseLength) : url;
 	var filePath = m.path + (
 		stage? "/" + stage + "/" + p : p);
 	var base = m.base;
@@ -338,7 +338,8 @@ context, api, basepath, request, response, param, matched)
 		stage = ctx.part;
 	}
 
-	var baseLength = ctx.prev + ctx.part.length;
+	var baseLength;
+	if (ctx.prev) baseLength = ctx.prev + ctx.part.length;
 	var qp = exports.queryParameter(url)
 	var queryParam = qp.param;
 	url = qp.url;
@@ -601,7 +602,7 @@ exports.run = function(context,apiset,basepath,param) {
 				context, apiset, basepath,
 				request, response, param);
 		} catch (e) {
-			console.log(e);
+			console.log(e, e.stack);
 		}
 	}
 
