@@ -7,21 +7,21 @@
 'use strict';
 
 var fs = require("fs");
-var object = require( "canis/object" );
+var object = require("canis/object");
 
 function
-getStorageContext( context, tblpref, name, callback ) {
-	if ( typeof tblpref === "string" )
+getStorageContext(context, tblpref, name, callback) {
+	if (typeof tblpref === "string")
 		return tblpref + name;
-	if ( tblpref === null ) return name;
+	if (tblpref === null) return name;
 	var s;
 	var storage = context._entity._storage;
 	var mname = tblpref.name;
-	if ( storage === undefined ) {
+	if (storage === undefined) {
 		storage = context._entity._storage = {};
 	} else {
 		s = storage[mname];
-		if ( s !== undefined ) {
+		if (s !== undefined) {
 			callback( null, s, name);
 			return;
 		}
@@ -29,28 +29,28 @@ getStorageContext( context, tblpref, name, callback ) {
 	var i = mname.indexOf(".");
 	s = {
 		m : require( "canis/" +
-			( i > 0 ? mname.substring( 0, i ) : mname ) )
+			(i > 0 ? mname.substring(0, i ) : mname))
 	};
-	s.m.initialize( tblpref, function ( err, c ) {
+	s.m.initialize(tblpref, function ( err, c) {
 		s.c = c;
 		storage[mname] = s;
-		if ( err ) {
+		if (err) {
 			callback(err);
 		} else {
-			callback( null, s, mname );
+			callback(null, s, mname);
 		}
 	} );
 }
 
 function
-searchSortKey( p, keyname, key ) 
+searchSortKey(p, keyname, key) 
 {
 	var m = 0, n = p.length - 1, l = 0;
-	while ( l <= n ) {
-		m = l + ( ( n - l ) >>> 1 );
+	while (l <= n) {
+		m = l + ((n - l) >>> 1);
 		var cl = p[m][keyname].localeCompare(key);
-		if ( cl == 0 ) return m;
-		if ( cl < 0 ) l = m + 1;
+		if (cl == 0) return m;
+		if (cl < 0) l = m + 1;
 		else n = m - 1;
 	}
 	return -l - 1;
@@ -65,22 +65,22 @@ exports.getIndexName = function(key)
 
 
 exports.query = function
-	( context, tblpref, name, key, callback )
+	(context, tblpref, name, key, callback)
 {
-	function checkSortKey( data ) {
-		if ( data ) {
+	function checkSortKey(data) {
+		if (data) {
 			if ( key.s === undefined ||
 			     key.sval === undefined ) return true;
 			var sval = data[key.s];
-			if ( sval != null ) {
-				switch ( key.cond ) {
+			if (sval != null) {
+				switch (key.cond) {
 					default:
-throw new Error( "Unexpected operator " + key.cond );
+throw new Error("Unexpected operator " + key.cond);
 					case null:
 					case undefined:
-					return sval.startsWith( key.sval );
+					return sval.startsWith(key.sval);
 					case "=":
-					if ( sval == key.sval ) return true;
+					if (sval == key.sval) return true;
 					break;
 					case "between":
 					if ( key.sval <= sval &&
@@ -90,60 +90,60 @@ throw new Error( "Unexpected operator " + key.cond );
 		}
 		return false;
 	}
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		name = getStorageContext( context, tblpref, name,
 		function (err,s, name) {
-			if ( err ) callback(err);
+			if (err) callback(err);
 			else s.m.query( s.c, context, tblpref, name,
 				key, callback );
 		} );
-		if ( name ) {
+		if (name) {
 			if ( key.s === undefined ||
 				key.sval === undefined ) {
-				require( "canis/awsddb" ).partitionKeyQuery
-				( this, context, name, key, callback );
+				require("canis/awsddb").partitionKeyQuery
+				(this, context, name, key, callback);
 			} else {
-				require( "canis/awsddb" ).primaryKeyQuery
-				( this, context.ddbcli(), name, key, callback );
+				require("canis/awsddb").primaryKeyQuery
+				(this, context.ddbcli(), name, key, callback);
 			}
 		}
 	} else {
 		var invoke = require("canis/invoke");
 		invoke( context, name, null, invoke.DISABLE_REMOTE,
-		function( err, data ) {
-			if ( err ) {
-				callback( err );
+		function(err, data) {
+			if (err) {
+				callback(err);
 			} else {
 				var cnt;
-				if ( key.index ) {
+				if (key.index) {
 					data = data["~index"];
 					do {
-						if ( data ) {
+						if (data) {
 							data = data[exports.
 								getIndexName(key)];
-							if ( data ) {
+							if (data) {
 								data = data.table;
 								break;
 							}
 						}
-						callback( new Error("NoSuchIndex") );
+						callback(new Error("NoSuchIndex"));
 						return;
 					} while(0);
 				}
 				data = data[key.pval];
 				var item;
-				if ( Array.isArray(data) ) {
+				if (Array.isArray(data)) {
 					cnt = 0;
-					for ( var i = 0; i < data.length; i++ ) {
+					for (var i = 0; i < data.length; i++) {
 						var di = data[i];
-						if ( checkSortKey(di) ) {
+						if (checkSortKey(di)) {
 							di = object.clone(di);
-							if ( item ) item.push( di );
+							if (item ) item.push( di);
 							else item = [ di ];
 							cnt++;
 						}
 					}
-				} else if ( checkSortKey(data) ) {
+				} else if (checkSortKey(data)) {
 					cnt = 1;
 					item = [ object.clone(data) ];
 				} else {
@@ -161,53 +161,53 @@ throw new Error( "Unexpected operator " + key.cond );
 };
 
 var ddbParam = {
-	put: function( name, key, body ) {
+	put: function(name, key, body) {
 		var item = {};
 		item[key.p] = key.pval;
-		if ( key.s ) item[key.s] = key.sval;
-		Object.assign( item, body );
+		if (key.s) item[key.s] = key.sval;
+		Object.assign(item, body);
 		var param = {
 			TableName: name,
 			Item: item
 		};
-		if ( key.sync && !unlock ) {
+		if (key.sync && !unlock) {
 			require("canis/awsddb").conditionExpression
-				( param, key.sync, "putExpression" );
+				(param, key.sync, "putExpression");
 		}
 		return param;
 	},
 	update: function( name,key,expr) {
-		var awsddb = require( "canis/awsddb" );
+		var awsddb = require("canis/awsddb");
 		var Key = {};
 		Key[key.p] = key.pval;
-		if ( key.s ) Key[key.s] = key.sval;
+		if (key.s) Key[key.s] = key.sval;
 		var param = {
 			TableName: name,
 			Key: Key
 		};
 		var state;
-		if ( key.sync )
+		if (key.sync)
 			state = awsddb.conditionExpression
-				( param, key.sync, "updateExpression", unlock );
+				(param, key.sync, "updateExpression", unlock);
 
-		if ( Array.isArray(expr) ) {
+		if (Array.isArray(expr)) {
 			var action = 0;
-			while ( i < expr.length ) {
+			while (i < expr.length) {
 				var e = expr[i++];
 				// prevent null, so null can be used to
 				// specify removal
-				if ( e !== null && typeof e === "object" ) {
+				if (e !== null && typeof e === "object") {
 					state = awsddb.updateExpression
-					( param, action, state, e.name, e.value );
+					(param, action, state, e.name, e.value);
 				} else {
 					action = e;
 				}
 			}
 			// don't do this, key only item can be saved
-			//if ( state === undefined ) break;
-		} else if ( typeof expr === "object" ) {
+			//if (state === undefined) break;
+		} else if (typeof expr === "object") {
 			awsddb.updateExpression
-			( param, 0, state, expr.name, expr.value );
+			(param, 0, state, expr.name, expr.value);
 		}
 		return param;
 	}
@@ -215,38 +215,38 @@ var ddbParam = {
 
 
 exports.transact = function
-	( context, tblpref, param, callback ) {
+	(context, tblpref, param, callback) {
 	var i;
 	var pi;
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		var name = getStorageContext
-			( context, tblpref, "@" );
-		if ( name ) {
+			(context, tblpref, "@");
+		if (name) {
 			var ddbparam = [];
-			for ( i = 0; i < param.length; i++ ) {
+			for (i = 0; i < param.length; i++) {
 				pi = param[i];
 				var op = pi.op;
 				var ddbop;
-				switch ( op ) {
+				switch (op) {
 					default:
 					ddbop = op.charAt(0).toUpperCase() +
 						op.substring(1);
 				}
 				var ddbpi = {};
 				var name = pi.arg[0];
-				if ( tblpref ) pi.arg[0] = tblpref + name;
+				if (tblpref) pi.arg[0] = tblpref + name;
 				ddbpi[ddbop] =
 					ddbParam[op].apply(null,pi.arg);
 				pi.arg[0] = name;
-				ddbparam.push( ddbpi );
+				ddbparam.push(ddbpi);
 			}
 			context.ddbcli().transactWrite
-				( { TransactItems: ddbparam }, callback );
+				({ TransactItems: ddbparam }, callback);
 		}
 	} else {
 		i = 0;
 		(function transactMemoryDB(err) {
-			if ( !err && i < param.length ) {
+			if (!err && i < param.length) {
 				pi = param[i++];
 				exports[pi.op]( context, tblpref,
 					pi.arg[0], pi.arg[1], pi.arg[2],
@@ -261,28 +261,28 @@ exports.transact = function
 // body and expr are exclusive, if body is empty
 // expr contains update instructions, vice versa
 function
-put( context, name, key, body, unlock, callback, expr )
+put(context, name, key, body, unlock, callback, expr)
 {
 	var mutex;
-	function synchronize( sync, prev ) {
-		if ( !sync ) return true;
+	function synchronize(sync, prev) {
+		if (!sync) return true;
 
 		var result;
 		var or = true;
-		function append( si ) {
+		function append(si) {
 			// TODO: parenthesis is not implemented yet
-			if ( si === "|" ) {
+			if (si === "|") {
 				or = true;
 			} else {
-				if ( or ) {
-					if ( result ) return true;
+				if (or) {
+					if (result) return true;
 					or = false;
 				} else {
-					if ( !result ) return true;
+					if (!result) return true;
 				}
 
 				var value = prev ? prev[si.name] : undefined;
-				switch ( si.cond ) {
+				switch (si.cond) {
 					case "absent":
 					result = value === undefined ?
 						true : false;
@@ -292,12 +292,12 @@ put( context, name, key, body, unlock, callback, expr )
 						false : true;
 					break;
 					case "lock":
-					if ( unlock ) {
+					if (unlock) {
 						mutex = si.name;
 						result = true;
-					} else if ( result === undefined ) {
+					} else if (result === undefined) {
 						var m;
-						if ( value === undefined ) {
+						if (value === undefined) {
 							result = true;
 							// si.timeout > 0 includes
 							// si.timeout !== undefined
@@ -305,7 +305,7 @@ put( context, name, key, body, unlock, callback, expr )
 								Date.now() : true;
 						} else {
 							for (;;) {
-								if ( si.timeout > 0 ) {
+								if (si.timeout > 0) {
 									m = Date.now();
 									if ( value <
 										m - si.timeout ) {
@@ -317,7 +317,7 @@ put( context, name, key, body, unlock, callback, expr )
 								return true;
 							}
 						}
-						if ( expr )
+						if (expr)
 							mutex = {
 								name: si.name, value: m
 							};
@@ -331,14 +331,14 @@ put( context, name, key, body, unlock, callback, expr )
 			}
 		}
 
-		if ( Array.isArray(sync) ) {
-			for ( var i = 0; i < sync.length; i++ )
-				if ( append( sync[i] ) ) break;
+		if (Array.isArray(sync)) {
+			for (var i = 0; i < sync.length; i++)
+				if (append(sync[i])) break;
 		} else {
-			append( sync );
+			append(sync);
 		}
 
-		if ( !result ) {
+		if (!result) {
 			callback( {
 				code: "ConditionalCheckFailedException"
 			} );
@@ -346,18 +346,18 @@ put( context, name, key, body, unlock, callback, expr )
 		return result;
 	}
 
-	function merge( prev ) {
-		if ( typeof mutex === "object" ) prev[mutex.name] = mutex.value;
+	function merge(prev) {
+		if (typeof mutex === "object") prev[mutex.name] = mutex.value;
 
 // XXX only set and remove operation is defined now
-		if ( Array.isArray(expr) ) {
+		if (Array.isArray(expr)) {
 			var action = 0;
-			for ( var i = 0; i < expr.length; i ++ ) {
+			for (var i = 0; i < expr.length; i ++) {
 				var e = expr[i];
 				// prevent null, so null can be used to
 				// specify removal
-				if ( e !== null && typeof e === "object" ) {
-					switch ( action ) {
+				if (e !== null && typeof e === "object") {
+					switch (action) {
 						case undefined: break;
 						case 0:
 						prev[e.name] = e.value;
@@ -371,76 +371,76 @@ put( context, name, key, body, unlock, callback, expr )
 					action = e;
 				}
 			}
-		} else if ( typeof expr === "object" ) {
+		} else if (typeof expr === "object") {
 			prev[expr.name] = expr.value;
 		}
-		if ( unlock ) delete prev[mutex];
+		if (unlock) delete prev[mutex];
 		return true;
 	}
 
 	var invoke = require("canis/invoke");
 	invoke( context, name, null, invoke.DISABLE_REMOTE,
-	function( err, data ) {
-		function store( table, body, key, sync ) {
+	function(err, data) {
+		function store(table, body, key, sync) {
 			var prev = table[key.pval];
-			if ( key.s ) {
+			if (key.s) {
 				body[key.s] = key.sval;
-				if ( prev !== undefined ) {
-					if ( !Array.isArray(prev) ) {
+				if (prev !== undefined) {
+					if (!Array.isArray(prev)) {
 						prev = [ prev ];
 						table[key.pval] = prev;
 					}
 
 					var i = searchSortKey
-						( prev, key.s, key.sval );
-					if ( !synchronize( sync, prev[i] ) )
+						(prev, key.s, key.sval);
+					if (!synchronize(sync, prev[i]))
 						return;
 
-					if ( i < 0 ) {
+					if (i < 0) {
 						i = -i - 1;
-						prev.splice( i, 0, null );
+						prev.splice(i, 0, null);
 					}
-					if ( expr ) {
+					if (expr) {
 						var pi = prev[i];
-						if ( pi ) {
-							merge( pi );
+						if (pi) {
+							merge(pi);
 							return true;
 						}
-						merge( body );
+						merge(body);
 					}
 					prev[i] = body;
 					return true;
 				}
 				/* if here, there is no previous item,
-				  so share below routine though if ( prev )
+				  so share below routine though if (prev)
 				  is evaluated twice */
 			}
 
-			if ( !synchronize( sync, prev ) ) return;
-			if ( expr ) {
-				if ( prev ) {
-					merge( prev );
+			if (!synchronize(sync, prev)) return;
+			if (expr) {
+				if (prev) {
+					merge(prev);
 					return true;
 				}
-				merge( body );
+				merge(body);
 			}
 			table[key.pval] = body;
 			return true;
 		}
 
-		if ( err ) {
+		if (err) {
 			callback(err);
 		} else {
-			body = object.clone( body );
+			body = object.clone(body);
 			body[key.p] = key.pval;
 
-			if ( store( data, body, key, key.sync ) ) {
+			if (store(data, body, key, key.sync)) {
 				// global secondary index
 				var index = data["~index"];
-				for ( var prop in index ) {
-					if ( index.hasOwnProperty(prop) ) {
+				for (var prop in index) {
+					if (index.hasOwnProperty(prop)) {
 						var i = index[prop];
-						if ( !i.table ) i.table = {};
+						if (!i.table) i.table = {};
 						var p = i.key.p;
 						var s = i.key.s;
 						store( i.table, body, {
@@ -460,28 +460,28 @@ exports.put = function( context, tblpref, name,
 	key, body, callback )
 {
 	var unlock;
-	if ( typeof body === "function" ) {
+	if (typeof body === "function") {
 		callback = body;
 		body = undefined;
-	} else if ( Array.isArray(body) ) {
+	} else if (Array.isArray(body)) {
 		unlock = true;
 		body = body[0] === undefined ? body[1] : body[0];
 	}
 
 	var t = key.t;
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		name = getStorageContext( context, tblpref, name,
 		function (err,s,name) {
-			if ( err ) callback(err);
+			if (err) callback(err);
 			else s.m.put( s.c, context, tblpref, name,
 				key, body, unlock, callback );
 		} );
-		if ( name )
+		if (name)
 			context.ddbcli().put( ddbParam.put
-				( name, key, body ), callback );
+				(name, key, body ), callback);
 	} else {
 		var t = key.t;
-		if ( t ) {
+		if (t) {
 			key.t = undefined;
 			t.param.push({
 				op: "put",
@@ -490,9 +490,9 @@ exports.put = function( context, tblpref, name,
 				p3: object.clone(body),
 			});
 			key.t = t;
-			setTimeout( callback );
+			setTimeout(callback);
 		} else {
-			put( context, name, key, body, false, callback );
+			put(context, name, key, body, false, callback);
 		}
 	}
 };
@@ -501,12 +501,12 @@ exports.update = function( context, tblpref, name,
 	key, expr, callback )
 {
 	var i, unlock;
-	if ( typeof expr === "function" ) {
+	if (typeof expr === "function") {
 		callback = expr;
 		expr = undefined;
 	} else {
-		if ( Array.isArray(expr) ) {
-			if ( expr[0] === undefined ) {
+		if (Array.isArray(expr)) {
+			if (expr[0] === undefined) {
 				unlock = true;
 				i = 1;
 			} else {
@@ -515,14 +515,14 @@ exports.update = function( context, tblpref, name,
 		}
 	}
 
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		name = getStorageContext( context, tblpref, name,
 		function (err,s,name) {
-			if ( err ) callback(err);
+			if (err) callback(err);
 			else s.m.put( s.c, context, tblpref, name,
 				key, undefined, unlock, callback, expr );
 		} );
-		if ( name )
+		if (name)
 			context.ddbcli().update( ddbParam.update
 				(name,key,expr), callback );
 	} else {
@@ -540,23 +540,23 @@ exports.update = function( context, tblpref, name,
 // to delete an item : pval, sval
 
 exports.delete = function
-	( context, tblpref, name, key, callback )
+	(context, tblpref, name, key, callback)
 {
-	function del( delItem, loop ) {
+	function del(delItem, loop) {
 		var queried = key.queried;
-		if ( queried ) {
+		if (queried) {
 			var item = queried.Items;
 			var cnt = queried.Count;
 			var cond = key.cond;
 			var i = 0;
 			return (function delQueried(e,d) {
 				for (;;) {
-					if ( i < cnt ) {
+					if (i < cnt) {
 						var di = item[i++];
-						if ( cond && !cond(di) ) continue;
+						if (cond && !cond(di)) continue;
 						if ( delItem( di[key.p], di[key.s],
 							delQueried ) ) return true;
-						if ( loop ) continue;
+						if (loop) continue;
 						return;
 					}
 					callback( e, d);
@@ -564,14 +564,14 @@ exports.delete = function
 				}
 			})();
 		}
-		return delItem( key.pval, key.sval, callback );
+		return delItem(key.pval, key.sval, callback);
 	}
 
 	// impl
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		name = getStorageContext( context, tblpref, name,
 		function (err,s, name) {
-			if ( err ) {
+			if (err) {
 				callback(err);
 			} else {
 				del( function (pval,sval,done) {
@@ -581,52 +581,52 @@ exports.delete = function
 				} );
 			}
 		} );
-		if ( name === undefined ) return;
+		if (name === undefined) return;
 		var param = {
 			TableName: name,
 			Key: {}
 		};
-		del( function( pval, sval, done ) {
+		del(function( pval, sval, done) {
 			param.Key[key.p] = pval;
-			if ( key.s ) param.Key[key.s] = sval;
-			context.ddbcli().delete( param, done );
+			if (key.s) param.Key[key.s] = sval;
+			context.ddbcli().delete(param, done);
 		} );
 	} else {
 		var invoke = require("canis/invoke");
 		invoke( context, name, null, invoke.DISABLE_REMOTE,
-		function( err, data ) {
-			if ( err ) {
+		function(err, data) {
+			if (err) {
 				callback(err);
 			} else {
 				if ( !del(
 				function(pval,sval) {
 					do {
 						var p = data[pval];
-						if ( p ) {
-							if ( key.s === undefined )
+						if (p) {
+							if (key.s === undefined)
 								break;
-							if ( sval === undefined ) {
+							if (sval === undefined) {
 								callback( new Error
-									( "SortKeyNeeded" ) );
+									("SortKeyNeeded" ));
 								return true;
 							}
 
-							if ( Array.isArray(p) ) {
+							if (Array.isArray(p)) {
 								var i = searchSortKey
-									( p, key.s, sval );
-								if ( i >= 0 ) {
-									p.splice( i, 1 );
+									(p, key.s, sval);
+								if (i >= 0) {
+									p.splice(i, 1);
 									return;
 								}
 							} else {
-								if ( p[key.s] === sval )
+								if (p[key.s] === sval)
 									break;
 							}
 						}
 						callback( new Error
-							( "NoSuchItem" ) );
+							("NoSuchItem" ));
 						return true;
-					} while ( 0 );
+					} while (0);
 					// current memorydb implementation
 					// cannot determine this case
 					// requires sort key
@@ -638,27 +638,27 @@ exports.delete = function
 	}
 };
 
-exports.retry = function( err, retry, timeout ) {
-	if ( err.code == "ConditionalCheckFailedException" ) {
-		setTimeout( retry, timeout );
+exports.retry = function(err, retry, timeout) {
+	if (err.code == "ConditionalCheckFailedException") {
+		setTimeout(retry, timeout);
 		return true;
 	}
 };
 
-exports.finalize = function( context )
+exports.finalize = function(context)
 {
 	var storage = context._entity._storage;
-	for ( var name in storage ) {
-		if ( storage.hasOwnProperty(name) ) {
+	for (var name in storage) {
+		if (storage.hasOwnProperty(name)) {
 			var s = storage[name];
-			s.m.finalize( s.c );
+			s.m.finalize(s.c);
 		}
 	}
 };
 
-exports.scan = function( context, tblpref, name, callback )
+exports.scan = function(context, tblpref, name, callback)
 {
-	if ( tblpref === undefined ) {
+	if (tblpref === undefined) {
 		var invoke = require("canis/invoke");
 		invoke( context, name, null, invoke.DISABLE_REMOTE,
 		function(err,data) {
@@ -667,21 +667,21 @@ exports.scan = function( context, tblpref, name, callback )
 			};
 
 			var cnt = 0;
-			for ( var p in data ) {
+			for (var p in data) {
 				var d = data[p];
-				if ( Array.isArray(d) ) {
-					for ( var i = 0; i < d.length; i++ ) {
-						scan.Items.push( d[i] );
+				if (Array.isArray(d)) {
+					for (var i = 0; i < d.length; i++) {
+						scan.Items.push(d[i]);
 						cnt ++;
 					}
 				} else {
-					scan.Items.push( d );
+					scan.Items.push(d);
 					cnt ++;
 				}
 			}
 			scan.Count = cnt;
 
-			callback( null, scan );
+			callback(null, scan);
 		} );
 	} else {
 		var param = {
@@ -692,11 +692,11 @@ exports.scan = function( context, tblpref, name, callback )
 		(function scan() {
 			context.ddbcli().scan( param,
 			function(err,data) {
-				if ( err ) {
+				if (err) {
 					callback(err );
 				} else {
 					var next;
-					if ( data.LastEvaluatedKey ) {
+					if (data.LastEvaluatedKey) {
 						param.ExclusiveStartKey =
 							data.LastEvaluatedKey;
 						next = scan;
@@ -711,46 +711,46 @@ exports.scan = function( context, tblpref, name, callback )
 // lock can be done by both put and update
 // but unlock is not, so separate function is defined
 /*exports.unlock = function
-	( context, tblpref, name, key, callback )
+	(context, tblpref, name, key, callback)
 {
 	// delete key.lock column or call storage.delete
 	// to remove mutex
 	var sync = key.sync;
-	if ( sync ) {
+	if (sync) {
 		exports.update( context, tblpref, name, key,
 			[ undefined, null, { name: sync.name } ], callback );
 	} else {
 		exports.delete
-			( context, tblpref, name, key, callback );
+			(context, tblpref, name, key, callback);
 	}
 };*/
 
 exports.snapshot = function
-	( context, tblpref, name, path, callback )
+	(context, tblpref, name, path, callback)
 {
-	if ( tblpref !== undefined ) {
+	if (tblpref !== undefined) {
 		name = name; /* XXX */
 	} else {
 		var invoke = require("canis/invoke");
 		invoke( context, name,
 		null, invoke.DISABLE_REMOTE,
-		function( err, data ) {
-			if ( err ) {
+		function(err, data) {
+			if (err) {
 				callback(err);
 			} else {
 				var s = JSON.stringify(data,null,4);
-				if ( path ) {
-					fs.open( path, "w", function( err, fd ) {
-						if ( err ) {
-							callback( err );
+				if (path) {
+					fs.open(path, "w", function( err, fd) {
+						if (err) {
+							callback(err);
 						} else {
 							fs.write( fd, s, function () {
-								fs.close( fd, callback );
+								fs.close(fd, callback);
 							} );
 						}
 					} );
 				} else {
-					console.log( s );
+					console.log(s);
 					callback();
 				}
 			}
@@ -759,59 +759,59 @@ exports.snapshot = function
 };
 
 
-exports.createDirectory = function(path,file) {
+exports.createDirectory = function(path, file) {
 	var p;
 	var from = 0, to = -1;
 	var l = path.length;
-	var i = file? l = path.lastIndexOf("/",l) : l;
+	var i = file? l = path.lastIndexOf("/", l) : l;
 	var p = path;
-	while ( !fs.existsSync( p ) ) {
-		i = p.lastIndexOf( "/", i );
-		if ( i < 0 ) break;
-		p = path.substring(0,i);
+	while (!fs.existsSync(p)) {
+		i = p.lastIndexOf("/", i);
+		if (i < 0) break;
+		p = path.substring(0, i);
 	}
-	while ( ++i < l ) {
-		i = path.indexOf( "/", i );
-		fs.mkdirSync( i < 0 ? (i = l, path) :
-			path.substring(0,i) );
+	while (++i < l) {
+		i = path.indexOf("/", i);
+		fs.mkdirSync(i < 0 ?
+			(i = l, path) : path.substring(0, i));
 	}
 }
 
-exports.open = function ( context, id, path, local ) {
+exports.open = function (context, id, path, local) {
 	function fileName(a,b,c) {
 		return a + "/" + b + "/" + c;
 	}
-	if ( typeof id === "object" ) {
+	if (typeof id === "object") {
 		var fn = id ? fileName( path,
 			id.param.Bucket, id.param.Key ) : path;
 		var p = fn;
 		var i = p.lastIndexOf("/");
-		if ( i > 0 ) {
-			exports.createDirectory( p.substring(0,i) );
+		if (i > 0) {
+			exports.createDirectory(p.substring(0,i));
 		}
 		var mode = "r+";
-		for ( i = 0 ; i < 2; i++ ) {
+		for (i = 0 ; i < 2; i++) {
 			try {
 				var fd = fs.openSync( fn,
 					local !== undefined ? local : mode );
-				if ( fd >= 0 ) {
+				if (fd >= 0) {
 					return {
 						fd: fd,
 						offset: 0
 					}
-//		console.log( p );
-//		fs.mkdirSync( p );
+//		console.log(p);
+//		fs.mkdirSync(p);
 				}
-			} catch ( e ) {
+			} catch (e) {
 			}
 			mode = "w+";
 		}
 	} else {
-/*		if ( local ) {
+/*		if (local) {
 			var ioc = exports.open( context, null,
-				fileName( local, id, path ),
+				fileName(local, id, path),
 					"wx+" );
-			if ( ioc ) return ioc;
+			if (ioc) return ioc;
 		}*/
 		return {
 			s3 : context.service("S3"),
@@ -823,30 +823,30 @@ exports.open = function ( context, id, path, local ) {
 	}
 }
 
-exports.close = function ( ioc ) {
+exports.close = function (ioc) {
 	var fd = ioc.fd;
-	if ( fd === undefined ) {
+	if (fd === undefined) {
 	} else {
-		fs.closeSync( ioc.fd );
+		fs.closeSync(ioc.fd);
 	}
 }
 
-exports.read = function( ioc, callback, filter )
+exports.read = function(ioc, callback, filter)
 {
 	var fd = ioc.fd;
-	if ( fd === undefined ) {
+	if (fd === undefined) {
 		var param = ioc.param;
-		if ( filter ) {
+		if (filter) {
 			var expr = "SELECT ";
 			var col = filter.column;
-			if ( col ) {
+			if (col) {
 // TODO: column is array
 				expr += col;
 			} else {
 				expr += "*";
 			}
 			expr += " from S3Object where " + filter.s;
-			switch ( filter.cond ) {
+			switch (filter.cond) {
 				case "contain" : expr += " like '%" + filter.sval + "%'";
 			}
 			param = {
@@ -867,13 +867,13 @@ exports.read = function( ioc, callback, filter )
 			}
 			
 			ioc.s3.selectObjectContent( param, function (err,data) {
-				if ( !err ) {
+				if (!err) {
 					var s = "";
 					data.Payload.on( 'data',
 						function(event) {
-							if ( event.Records )
+							if (event.Records)
 								s += event.Records.Payload.toString();
-							else if ( event.End ) {
+							else if (event.End) {
 								callback( null,
 									JSON.parse( "[" +
 										s.substring(0,s.length-1) + "]" ) );
@@ -886,31 +886,31 @@ exports.read = function( ioc, callback, filter )
 			} );
 		} else {
 			ioc.s3.getObject( param, function(err,data) {
-				if ( !err ) {
+				if (!err) {
 					data.buf = data.Body;
 				}
-				callback( err, data );
+				callback(err, data);
 			} );
 		}
 	} else {
 		fs.fstat( fd, function(err,st) {
-			if ( err ) {
+			if (err) {
 				callback(err);
 			} else {
 				var data = {
-					buf : Buffer.alloc( st.size )
+					buf : Buffer.alloc(st.size)
 				}
 				fs.read( fd, data.buf, 0,st.size, 0,
 				function(err) {
-					if ( err ) callback(err);
-					else callback( null, data );
+					if (err) callback(err);
+					else callback(null, data);
 				});
 			}
 		} );
 	}
 }
 
-exports.write = function( ioc, buf, callback ) {
+exports.write = function(ioc, buf, callback) {
 	var fd = ioc.fd;
 	if (fd === undefined) {
 		var param = { 
@@ -923,7 +923,7 @@ exports.write = function( ioc, buf, callback ) {
 			if (err) {
 				callback(err);
 			} else {
-				s3.putObject(param, function ( err ) {
+				s3.putObject(param, function (err) {
 					if (err && err.code == "NoSuchBucket") {
 						s3.createBucket({
 							Bucket: param.Bucket
@@ -947,12 +947,12 @@ exports.write = function( ioc, buf, callback ) {
 	}
 }
 
-exports.url = function( ioc, callback, expire ) {
+exports.url = function(ioc, callback, expire) {
 	var fd = ioc.fd;
-	if ( fd === undefined ) {
+	if (fd === undefined) {
 		var s3 = ioc.s3;
 		var param = { Expires: expire };
-		Object.assign( param, ioc.param );
+		Object.assign(param, ioc.param);
 		s3.getSignedUrl('getObject', param, callback );
 	}
 }

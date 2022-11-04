@@ -10,6 +10,8 @@ import json
 import threading
 import builtins
 from canis.runtime import io
+_pydevd = None
+_event = []
 
 def _cygtodos(path):
 	return path[10] + ':' + path[11:] if path.startswith(
@@ -28,6 +30,13 @@ def _color(c):
 	}.get(c)
 	return "\033[" + ( "95" if c is None else c ) + "m"
 
+def resolve(body):
+	io.send({
+		"action": "resolve",
+		"body": body
+	})
+	return io.recv()["body"]
+
 def initialize(cmd):
 	path = cmd.get("rtpath")
 	if path:
@@ -42,8 +51,18 @@ def initialize(cmd):
 	if init:
 		for src in init:
 			lst = src.get("fromlist")
+			_tried = {}
 			try:
-				imp = __import__(src["name"], fromlist=lst)
+				imp = __import__(
+					src["name"], fromlist=lst)
+			except ModuleNotFoundError as e:
+				print(e)
+#					for evt in _event:
+#						if evt("install", e.name):
+#							print(sys.executable + " -m pip install " + e.name)
+#							continue
+#					sys.exit(1)
+				continue
 			except Exception as e:
 				raise e
 			log = src.get("log")
@@ -56,7 +75,10 @@ def initialize(cmd):
 						log_edit.append(p)
 					p = getattr(i, "initialize", None)
 					if p:
-						p(param)
+						p(sys.modules[__name__], param)
+					p = getattr(i, "event", None)
+					if p and callable(p):
+						_event.append(p)
 
 if __name__ == "__main__":
 	def log(p):
@@ -154,46 +176,15 @@ if __name__ == "__main__":
 			self.lock.release();
 
 	sys.stderr = StdErr()
+	port = os.environ.get("PYDEV_PORT")
+	if port is not None:
+		_pydevd = __import__("pydevd")
+		_pydevd.settrace("localhost", port=int(port), suspend=False)
 
-	class _Context:
-		@classmethod
-		def __init__(cls):
-			cls.function_name = "-handler"
-			cls.function_version = "1.0.0"
-		def get_remaining_time_in_millis(self):
-			return 10000
-
-	def _module_info(fn):
-		path, name = os.path.split( fn )
-		return path, os.path.splitext(name)[0]
-
-	callback = None
-	if len(sys.argv) > 1:
-		i = 1
-		if sys.argv[1] != '.':
-			cwd = os.getcwd()
-			path, name = _module_info(sys.argv[1])
-			sys.path.insert(0, path)
-			callback = import_module(name)
-			i += 1
-		sys.argv = sys.argv[i:]
-
-	def _notify(action):
-		if callback is not None and hasattr(callback,action):
-			f = getattr(callback,action)
-			if callable(f):
-				f()
-
-	def _exception(e):
-		traceback.print_exc()
-		io.send({
-			"action": "result",
-			"err": str(e)
-		})
-
-	_notify("before_loop")
-	while True:
+	def _action():
 		cmd = io.recv()
+		if cmd is None:
+			return None
 		action = cmd["action"]
 		if action == "invoke":
 			_notify("before_lambda")
@@ -239,7 +230,18 @@ if __name__ == "__main__":
 			handler = getattr(
 				l,handler if handler else "lambda_handler", None)
 			if handler:
-				r = handler(cmd.get("ev", {}), ctx)
+				try:
+					r = handler(cmd.get("ev", {}), ctx)
+				except Exception as e:
+					traceback.print_exc()
+					r = str(e)
+					try:
+						# because stringified object can
+						# use quot instead of double quot,
+						# try to parse json
+						r = json.loads(r)
+					except:
+						pass
 				io.send({
 					"action": "result",
 					"err": None,
@@ -261,13 +263,76 @@ if __name__ == "__main__":
 					_exception(e)
 			_notify("after_lambda")
 
-			# wait all threads terminate, like sys.exit
-			# TODO not compatible to AWS lambda written in python
-			mt = threading.currentThread()
-			for t in threading.enumerate():
-				if t != mt and t.daemon is not True:
-					t.join()
+			if _pydevd is None:
+				# wait all threads terminate, like sys.exit
+				# TODO not compatible to AWS lambda written in python
+				mt = threading.current_thread() if hasattr(threading, "current_thread") else threading.currentThread()
+				for t in threading.enumerate():
+					if t != mt and t.daemon is not True:
+						t.join()
 			io.send({"action": "reuse"})
 		elif action == "exit":
-			break
+			if _pydevd:
+				_pydevd.stoptrace()
+			return None
+		return cmd
+
+	class _Context:
+		@classmethod
+		def __init__(cls):
+			cls.function_name = "-handler"
+			cls.function_version = "1.0.0"
+		def get_remaining_time_in_millis(self):
+			return 10000
+		@staticmethod
+		def command(param):
+			io.send({
+				"action": "command",
+				"body": param
+			})
+			while cmd := _action():
+				if cmd["action"] == "command":
+					return cmd["body"]
+
+	def _module_info(fn):
+		path, name = os.path.split( fn )
+		return path, os.path.splitext(name)[0]
+
+	def _notify(action):
+		if callback is not None and hasattr(callback,action):
+			f = getattr(callback,action)
+			if callable(f):
+				f()
+
+	def _exception(e):
+		traceback.print_exc()
+		io.send({
+			"action": "result",
+			"err": str(e)
+		})
+
+	callback = None
+	def _initialize():
+		global callback
+		i = 1
+		addr = None
+		while len(sys.argv) > i:
+			arg = sys.argv[i]
+			if arg == '.':
+				break
+
+			if arg[0] == ':':
+				addr = arg[1:]
+			else:
+				path, name = _module_info(arg)
+				sys.path.insert(0, path)
+				callback = import_module(name)
+			i += 1
+		sys.argv = sys.argv[i:]
+		io.connect(addr)
+	_initialize()
+
+	_notify("before_loop")
+	while _action():
+		pass
 	_notify("after_loop")

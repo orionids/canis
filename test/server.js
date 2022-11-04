@@ -1,3 +1,8 @@
+// vim: ts=4 sw=4 :
+// jshint curly:false
+// Copyright (C) 2017, adaptiveflow
+// Distributed under ISC License
+
 var context = require("canis/context")
 
 process.chdir( __dirname );
@@ -6,8 +11,9 @@ console.log( "Type quit() to terminate server" );
 
 // multiple API set so url will be apiset/stage/url, i.e
 // GET /testapi/test1/hello
-var s = server.main ( context, [ { name: "testweb", alias : "" },
-"testapi" ]
+var s = server.main ( context, [
+	{name: "testweb", alias : ""},
+	"testapi" ]
 ,
 
 // this parameter is optional

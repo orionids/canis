@@ -25,26 +25,56 @@ var base = {
 	]
 };
 var ref = object.clone(base);
+
+// JSON inclusion
+// - object includes objects (list is not supported)
+// - list includes list
 var o = object.clone( {
+/*	"[[INCLUDE]]": [
+		"[MK_DEVEL]/test/js/in1", 
+		"[MK_DEVEL]/test/js/in2"
+		, {"my2": "LLL"}
+	],*/
+	"xxx": [
+		["[[INCLUDE]]",
+		"[MK_DEVEL]/test/js/in1",
+		"[MK_DEVEL]/test/js/in2"],
+		"@@@",
+		{
+			"a": "[W]"
+		},
+		["[[INCLUDE]]",
+		"[MK_DEVEL]/test/js/in1",
+		"[MK_DEVEL]/test/js/in3"],
+		"#"
+	],
 	"[W]": {
 		a: "Hello [W]", b: 2, x: "b"
 	},
 	"Hello": [
 		{
 			a: 11,
-			c:3
+			c:333
 		},
+//		["[[INCLUDE]]", "[MK_DEVEL]/test/js/in1",
+//"[MK_DEVEL]/test/js/in2"
+//],
 		{
 			x: 123
 		}
 	]
 }, {
-	symbol: {
-		"W" : "World"
-	},
-	recursive : true
+	symbol: [
+		{"W" : "World"},
+		process.env
+	],
+	recursive : true,
+	include: {
+		keyword: "[[INCLUDE]]",
+		load: require
+	}
 }, base);
 
 console.log(o);
 ///Object.assign(ref, o);
-//console.log(ref);
+console.log(ref);

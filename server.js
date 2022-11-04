@@ -4,17 +4,17 @@
 // Distributed under ISC License
 
 "use strict";
-var fs = require( "fs" );
-var path = require( "path" );
-var tls = require( "tls" );
-var string = require( "canis/string" );
-var object = require( "canis/object" );
-var invoke = require( "canis/invoke" );
-var log = require( "canis/log" );
+var fs = require("fs");
+var path = require("path");
+var tls = require("tls");
+var string = require("canis/string");
+var object = require("canis/object");
+var invoke = require("canis/invoke");
+var log = require("canis/log");
 
 process.on( 'uncaughtException', function (err,origin) {
-	console.log( err );
-	console.log( origin );
+	console.log(err);
+	console.log(origin);
 } );
 
 exports.stage = function (config, url, ctx)
@@ -46,7 +46,7 @@ exports.stage = function (config, url, ctx)
 
 // ctx : { i(in out), part(out) }
 function
-match( api, url, ctx ) {
+match(api, url, ctx) {
 	var start = ctx.i;
 	if (start < 0) {
         // this means root (/) API of an element in API set is called
@@ -78,13 +78,25 @@ match( api, url, ctx ) {
 	return api[ctx.part];
 }
 
+function absence(response, method, config) {
+	response.writeHead(404, {
+		'Content-Type' : "text/plain"
+	} );
+// TODO: support not found page
+// XXX DUP
+	if (method != "HEAD")
+		response.write("Not found");
+	response.end();
+}
+
 function
-resource( m, stage, url, baseLength, response, config, param )
+resource(m, method, stage, url, baseLength,
+	response, config, param)
 {
 	function result(fn, data, r) {
 		var type = "text/html";
 		var index = fn.lastIndexOf(".");
-		if ( index > 0 ) {
+		if (index > 0) {
 			switch( fn.substring
 				(index + 1).toLowerCase() ) {
 				case "jpg" : case "jpeg":
@@ -122,7 +134,8 @@ resource( m, stage, url, baseLength, response, config, param )
 		}
 		response.writeHead(
 			code === undefined? 200 : code, header);
-		response.write( data );
+		if (method != "HEAD")
+			response.write(data);
 		response.end();
 	}
 
@@ -145,53 +158,48 @@ resource( m, stage, url, baseLength, response, config, param )
 	}
 
 	function notFound() {
-		response.writeHead(404, {
-			'Content-Type' : "text/plain"
-		} );
-// TODO: support not found page
-		response.write( "Not found" );
-		response.end();
+		absence(response, method, config);
 	}
 
 	var p = baseLength ? url.substring(baseLength) : url;
 	var filePath = m.path + (
 		stage? "/" + stage + "/" + p : p);
 	var base = m.base;
-	if ( base ) base = process.env[base];
-	if ( !base ) base = m.basePath;
-	if ( base ) filePath = base + "/" + filePath;
-	filePath = path.normalize( filePath );
-	if ( filePath.charAt(0) == "." ) {
-		console.log( "Suspicious request using relative path :", filePath );
+	if (base) base = process.env[base];
+	if (!base) base = m.basePath;
+	if (base) filePath = base + "/" + filePath;
+	filePath = path.normalize(filePath);
+	if (filePath.charAt(0) == ".") {
+		console.log("Suspicious request using relative path :", filePath);
 		notFound();
-	} else if ( param.ignore && param.ignore.exec(filePath) ) {
-		console.log( "ignored :" + filePath );
+	} else if (param.ignore && param.ignore.exec(filePath)) {
+		console.log("ignored :" + filePath);
 		notFound();
 	} else {
-		console.log( log.position(), "STAGE=", stage, filePath );
+		console.log(log.position(), "STAGE=", stage, filePath);
 		fs.readFile( filePath, function(err,data) {
-			if ( err ) {
+			if (err) {
 //				do {
-				if ( err.code == "EISDIR" ) {
+				if (err.code == "EISDIR") {
 					var di = config.directoryIndex;
-					if ( di ) {
-						if ( !Array.isArray(di) )
+					if (di) {
+						if (!Array.isArray(di))
 							di = ["index.html", "index.htm"];
 						var i = 0;
 						(function iter() {
-							if ( i < di.length ) {
+							if (i < di.length) {
 								index(di[i++],iter);
 							} else {
 								notFound();
 							}
 						})();
 					} else {
-						index( di, notFound );
+						index(di, notFound);
 					}
 				} else {
 					notFound();
 				}
-//				} while ( 0 );
+//				} while (0);
 			} else {
 				result(filePath, data);
 			}
@@ -200,9 +208,9 @@ resource( m, stage, url, baseLength, response, config, param )
 }
 
 function
-corsHeader( hdr, param, extra )
+corsHeader(hdr, param, extra)
 {
-	if ( param.cors == undefined )
+	if (param.cors == undefined)
 		return extra;
 	var h = {
 		"Access-Control-Allow-Origin": hdr.origin,
@@ -211,22 +219,22 @@ corsHeader( hdr, param, extra )
 		"Access-Control-Max-Age": 3600,
 	};
 
-	Object.assign( h, extra );
+	Object.assign(h, extra);
 
 	return h;
 }
 
 
 function
-options( api, hdr, response, param )
+options(api, hdr, response, param)
 {
 				// XXX config for this response
 	var m = "OPTIONS";
-	var k = Object.keys( api );
-	for ( var i = 0; i < k.length; i++ ) {
+	var k = Object.keys(api);
+	for (var i = 0; i < k.length; i++) {
 		var a = k[i];
 		var c = a.charAt(0);
-		if ( c != '^' && c !=  "/" ) {
+		if (c != '^' && c !=  "/") {
 			m += "," + a;
 		}
 	}
@@ -237,22 +245,22 @@ options( api, hdr, response, param )
 	return 0;
 }
 
-exports.queryParameter = function(url) {
+exports.queryParameter = function(apipath) {
 	var param;
-	/* don't use lastIndexOf to guarantee url doesn't
+	/* don't use lastIndexOf to guarantee api path doesn't
 	 contain '?' */
-	var index = url.indexOf('?');
-	if ( index > 0 ) {
+	var index = apipath.indexOf('?');
+	if (index > 0) {
 		param = {}; // AWS supplies null object if query string param is absent
 		// XXX duplicated in ueParameter
-		var p = url.substring( index + 1 ).split('&');
-		for ( var i = 0; i < p.length; i++ ) {
+		var p = apipath.substring(index + 1).split('&');
+		for (var i = 0; i < p.length; i++) {
 			var v = p[i].split('=');
-			if ( v.length > 1 ) param[v[0]] = v[1];
+			if (v.length > 1) param[v[0]] = v[1];
 		}
-		url = url.substring( 0, index );
+		apipath= apipath.substring(0, index);
 	}
-	return { param: param, index: index, url: url };
+	return { param: param, index: index, api: apipath };
 }
 
 exports.invocationPath = function(basePath, configPath)
@@ -265,7 +273,7 @@ exports.invocationPath = function(basePath, configPath)
 
 function
 invokeAPI(
-context, api, basepath, request, response, param, matched)
+context, api, basepath, request, response, param)//, matched)
 {
 	function addPathParameter(name, all) {
 		var s;
@@ -286,8 +294,11 @@ context, api, basepath, request, response, param, matched)
 	}
 	var pathParameters; // pathParameter is undefined if no path parameters in AWS
 
-	var url = request.url;
-	if (!url) throw new Error("NO_URL");
+	var apipath = request.url; // std form of nodejs
+	if (!apipath) {
+		apipath = request.api; // support api attr too
+		if (!apipath) throw new Error("NO_API");
+	}
 	var ctx = {i: 0};
 	var a;
 	var base;
@@ -298,7 +309,7 @@ context, api, basepath, request, response, param, matched)
 
 	var apiInfo;
 	if (param.apiInfo && request.headers)
-		apiInfo = param.apiInfo(request.headers, url, ctx);
+		apiInfo = param.apiInfo(request.headers, apipath, ctx);
 	if (!apiInfo) apiInfo = {};
 
 	if (api.apiSet) {
@@ -307,7 +318,7 @@ context, api, basepath, request, response, param, matched)
 			api = api[name];
 		} else {
 			ctx.i += 1;
-			a = match(api, url, ctx);
+			a = match(api, apipath, ctx);
 			name = ctx.part;
 			if (a === undefined) {
 				// check there is anonymous api set
@@ -317,8 +328,13 @@ context, api, basepath, request, response, param, matched)
 				api = a;
 			}
 		}
-		if (api === undefined)
+		if (api === undefined) {
+			if (name == "favicon.ico") {
+				absence(response, request.method, null);
+				return;
+			}
 			throw new Error("UNKNOWN_API_SET." + name);
+		}
 	}
 
 	var config = api.configuration;
@@ -331,8 +347,8 @@ context, api, basepath, request, response, param, matched)
 			throw new Error("UNKNOWN_EXPLICIT_STAGE.", stage);
 		if (ctx.i == undefined) ctx.i = 0;
 		ctx.apiKey = sctx.apiKey;
-	} else {
-		if (exports.stage(config, url, ctx) === undefined) {
+	} else if(stage === null) {
+		if (exports.stage(config, apipath, ctx) === undefined) {
 			throw new Error("UNKNOWN_STAGE.", ctx.part); // XXX
 		}
 		stage = ctx.part;
@@ -340,18 +356,18 @@ context, api, basepath, request, response, param, matched)
 
 	var baseLength;
 	if (ctx.prev) baseLength = ctx.prev + ctx.part.length;
-	var qp = exports.queryParameter(url)
+	var qp = exports.queryParameter(apipath)
 	var queryParam = qp.param;
-	url = qp.url;
+	apipath = qp.api;
 
 	var requestContext = {
 		stage : ctx.part,
-		resourcePath : url.substring(ctx.i),
+		resourcePath : apipath.substring(ctx.i),
 		httpMethod: request.method
 	};
 
 	for (;;) {
-		a = match(api, url, ctx);
+		a = match(api, apipath, ctx);
 		if (a === undefined) { // path parameter
 			a = api["?"]; // get alias of path parameter
 			if (a === null) {
@@ -384,7 +400,7 @@ context, api, basepath, request, response, param, matched)
 				a = a.child;
 			}
 		}
-		if (matched) matched.push(ctx.part);
+//		if (matched) matched.push(ctx.part);
 		if (ctx.i < 0) break;
 		api = a;
 	}
@@ -444,7 +460,7 @@ context, api, basepath, request, response, param, matched)
 					str = str.toString();
 					break;
 				}
-				if ( lpi || lpii ) {
+				if (lpi || lpii) {
 					ev.body = str;
 					ev.queryStringParameters = queryParam;
 					ev.requestContext = requestContext;
@@ -463,7 +479,7 @@ ev.queries = queryParam;
 				}
 				ev.headers = hdr;
 				var fn = m.lambdaName;
-				if ( !fn ) {
+				if (!fn) {
 					fn = lambda.substring
 						(lambda.lastIndexOf("/") + 1);
 				}
@@ -475,6 +491,7 @@ ev.queries = queryParam;
 
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
+rtctx.symbol = param.symbol;
 				var rtname = m.runtime;
 				if (rtname === undefined) {
 					rtname = config.runtime;
@@ -518,8 +535,9 @@ rtctx.aws_request_id = 'reqid'
 						(type = m.header["Content-Type"]) === undefined) {
 						type = "text/plain";
 					}
-if ( xxx ) { // XXX more test is needed for exception case
-console.log( xxx );
+if (xxx) { // XXX more test is needed for exception case
+console.log(xxx);
+	response.end();
 } else {
 					response.writeHead(stat,
 						corsHeader(request.headers,
@@ -533,7 +551,7 @@ console.log( xxx );
 				});
 			});
 			request.on('error', function(e) {
-				console.log( e ); // XXX do response here
+				console.log(e); // XXX do response here
 			});
 			return m;
 		} else {
@@ -544,13 +562,30 @@ console.log( xxx );
 		}
 	} else {
 		a = api[""];
-//console.log( "ROOT entry--", a, url.substring( ctx.prev ) );
-//		m = a[request.method];
-		if (a && (m = a[request.method] ) && m.path)  {
-			resource(m, stage, url, baseLength, response, config, param);
-		} else {
-			throw new Error("UNKNOWN_API." + request.url);
+		m = request.method;
+		if (a && (m = a[m == "HEAD"? "GET": m])) {
+			if (Array.isArray(m)) {
+				m = m[0];
+				var i = apipath.indexOf("/", baseLength + 1);
+				if (i < 0) {
+					m = m[""];
+				} else {
+					m = m[apipath.substring(baseLength, i)];
+					if (m === undefined) {
+						m = m[""];
+					} else {
+						baseLength = i;
+					}
+				}
+			}
+			if (m.path) {
+				resource(m, request.method, stage, apipath,
+					baseLength, response, config, param);
+				return;
+			}
 		}
+		throw new Error("UNKNOWN_API: " +
+			request.method + " " + request.url);
 	}
 }
 exports.match = match;
@@ -558,20 +593,20 @@ exports.invoke = invokeAPI;
 
 exports.registerLambda = function(context, apiLambdaTable, basePath)
 {
-	if ( apiLambdaTable ) {
+	if (apiLambdaTable) {
 		var lambdaTable = context["^"];
-		if ( lambdaTable === undefined )
+		if (lambdaTable === undefined)
 			context["^"] = lambdaTable = {};	
-		for ( var lambdaName in apiLambdaTable ) {
+		for (var lambdaName in apiLambdaTable) {
 			var item = apiLambdaTable[lambdaName];
-			if ( basePath && !item.basePath )
+			if (basePath && !item.basePath)
 				item.basePath = basePath;
 			lambdaTable[lambdaName] = item;
 		}
 	}
 };
 
-exports.loadAPI = function( context, name, cwd )
+exports.loadAPI = function(context, name, cwd)
 {
 	try {
 		var api = object.load( path.isAbsolute(name) || !cwd?
@@ -579,17 +614,17 @@ exports.loadAPI = function( context, name, cwd )
 		var apiLambdaTable = api["^"];
 		var basePath;
 		var config = api.configuration;
-		if ( config ) basePath = config.basePath;
-		exports.registerLambda( context, api["^"], basePath );
+		if (config) basePath = config.basePath;
+		exports.registerLambda(context, api["^"], basePath);
 		return api;
-	} catch ( e ) {
-		if ( e.code === "MODULE_NOT_FOUND" ) {
+	} catch (e) {
+		if (e.code === "MODULE_NOT_FOUND") {
 			// so user supplied run function will have
 			// change to be run
 			return null;
 		} else {
-		//	require( file ); // raise exception again to know datails
-console.log( e ); // resolve this XXX not to use console.log : above doesn't work correctly
+		//	require(file); // raise exception again to know datails
+console.log(e); // resolve this XXX not to use console.log : above doesn't work correctly
 		}
 	}
 	return undefined;
@@ -606,11 +641,11 @@ exports.run = function(context,apiset,basepath,param) {
 		}
 	}
 
-	if ( apiset ) {
-		//const http = require( "http" );
+	if (apiset) {
+		//const http = require("http");
 		var listener = dispatch;
 	/*
-	var express = require( 'express' );
+	var express = require('express');
 	const app = express();
 	app.all('*', dispatch );
 	listener = app;
@@ -619,43 +654,45 @@ exports.run = function(context,apiset,basepath,param) {
 		do {
 			var server;
 			var port;
-			if ( param ) {
+			if (param) {
 				client = param.client;
 				port = param.port;
-				tls = param.tls
-				if ( tls ) {
-					const https = require( "https" );
+				var tlsinfo = param.tls
+				if (tlsinfo) {
+					const https = require("https");
 					var options = {
-						key: fs.readFileSync(tls.key),
-						cert: fs.readFileSync(tls.cert),
+						key: fs.readFileSync(tlsinfo.key),
+						cert: fs.readFileSync(tlsinfo.cert),
 						SNICallback: function (domain, cb) {
-						// XXX test in progress
-/*							console.log( domain, "<---" );
-const secondContext = tls.createSecureContext({
-    key: [key2],
-    cert: [cert2]
-});
-cb( null, secondContext );
-*/
-							cb();
+							var sd = tlsinfo[domain];
+							if ( sd === undefined) {
+								cb();
+							} else {
+								if (sd.context === undefined)
+									sd.context = tls.createSecureContext({
+										key: fs.readFileSync(sd.key),
+										cert: fs.readFileSync(sd.cert)
+									})
+								cb(null, sd.context);
+							}
 						}
 					};
 					server = https.createServer
-						( options, dispatch ).listen( port ? port : 443 );
+						(options, dispatch ).listen( port ? port : 443);
 					break;
 				}
 			}
-			const http = require( "http" );
+			const http = require("http");
 			server = http.createServer
-				( dispatch ).listen(port? port : 80 );
-		} while ( 0 );
+				(dispatch ).listen(port? port : 80);
+		} while (0);
 
 
-		if ( client ) {
+		if (client) {
 			server.client = {};
 			server.on( "connection", function(socket) {
-console.log( "New client", socket.remoteAddress );
-				string.unique( function( id ) {
+console.log("New client", socket.remoteAddress);
+				string.unique(function( id) {
 					socket.id = id;
 					server.client[id] = socket;
 					socket.on( "close", function() {
@@ -670,12 +707,12 @@ console.log( "New client", socket.remoteAddress );
 	}
 };
 
-exports.close = function( server ) {
-	if ( typeof server === "object" ) {
+exports.close = function(server) {
+	if (typeof server === "object") {
 		server.close();
 		var client = server.client;
-		for ( var c in client ) {
-			if ( client.hasOwnProperty(c) )
+		for (var c in client) {
+			if (client.hasOwnProperty(c))
 				client[c].destroy();
 		}
 	}
@@ -694,65 +731,73 @@ exports.main = function(context,apidef,param)
 {
 	var rl;
 
-	function clearChildren( head, callback, kill ) {
-		function clearChild( l ) {
-			if ( l !== head ) {
+	function clearChildren(head, callback, kill) {
+		function clearChild(l) {
+			if (l !== head) {
 				l.child.on( "close", function() {
-console.log( "child closed" );
-					clearChild( l.next );
+console.log("child closed");
+					clearChild(l.next);
 				} );
-console.log( "send exit" );
-				if ( kill ) l.child.kill( "SIGINT" );
-				else l.child.send( { action: "exit" } );
+console.log("send exit");
+				if (kill ) l.child.kill( "SIGINT");
+				else l.child.send({ action: "exit" });
 			} else {
 				callback();
 			}
 		}
-		clearChild( head.next );
+		clearChild(head.next);
 	}
 
 	function finalize() {
-		rl.close();
+		if (rl) rl.close();
+		invoke.gc();
 		var fin = param.finalize;
-		if ( fin ) fin();
+		if (fin) fin();
 	}
 
 	var term;
 	function terminate() {
-		if ( term ) return;
+		if (term) return;
 		term = true;
 		// XXX disable request no more variance
 		// in process list
 		var fork = context.get("fork");
-		if ( fork && fork.runtime ) {
-			var rtl = Object.keys(fork.runtime);
-			var rti = 0;
-			(function clearRuntime() {
-				while ( rti < rtl.length ) {
-					var rt = rtl[rti++];
-					if (rt.active === undefined) continue;
-					var active = rt.active.next;
-					if ( active != rt.active ) {
-						// XXX wait few seconds  for active
-						// processes before killing them
-						console.log( "Waiting 5 seconds for active processes" );
-						setTimeout( function() {
-							clearChildren( rt.active, function() {
-								clearChildren( rt.idle,
-									clearRuntime );
-							}, true );
-						}, 5000 );
-					} else {
-						clearChildren( rt.idle,
-							clearRuntime );
-					}
-					return;
-				}
-				finalize();
-			})();
+		var rtl;
+		if (fork && fork.runtime) {
+			rtl = Object.keys(fork.runtime);
+			rtl.push(invoke.getRuntime());
 		} else {
-			finalize();
+			rtl = [invoke.getRuntime()];
 		}
+		var rti = 0;
+		(function clearRuntime() {
+			while (rti < rtl.length) {
+				var rt = rtl[rti++];
+				var active = rt.active;
+				if (active === undefined) continue;
+				active = active.next;
+				while (active != rt.active) {
+					if (active.quit) active.quit();
+					active = active.next;
+				}
+				active = active.next;
+				if (active != rt.active) {
+					// XXX wait few seconds  for active
+					// processes before killing them
+					console.log("Waiting 5 seconds for active processes");
+					setTimeout(function() {
+						clearChildren(rt.active, function() {
+							clearChildren(
+								rt.idle, clearRuntime);
+						}, true);
+					}, 5000);
+				} else {
+					clearChildren( rt.idle, clearRuntime );
+				}
+				return;
+			}
+			finalize();
+		})();
 	}
 	var run;
 	if (typeof param === "function") {
@@ -789,7 +834,7 @@ console.log( "send exit" );
 			})();
 		}
 	}
-	if ( !run ) run = exports.run;
+	if (!run) run = exports.run;
 
 
 	var apiset;
@@ -823,7 +868,7 @@ console.log( "send exit" );
 	}
 
 	if (apiset === undefined) return undefined;
-	var r = run(context, apiset, cwd, param);
+	var r = run(context, apiset, cwd, param, terminate);
 	if (r !== undefined) return r;
 	// so below default api run will do nothing
 	return false;
@@ -831,4 +876,4 @@ console.log( "send exit" );
 
 if ( exports.main(
 		require("canis/context"), "restapi" ) === undefined )
-	console.log( "No body in restapi.js" );
+	console.log("No body in restapi.js");
