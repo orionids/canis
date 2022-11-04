@@ -10,3 +10,8 @@ console.log( c.storage_unlockDelay );
 console.log( c );
 console.log( context );
 console.log( "done" );
+
+context.module("validator", "canis", "val");
+console.log("AFTER MODULE");
+console.log(context.bind("val"));
+context.module("iterator", "@orionids/canis", true);

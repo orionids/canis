@@ -6,11 +6,14 @@
 
 var list;
 var child_process;
+var net;
 var context = require("canis/context");
 var server = require("canis/server");
 var string = require("canis/string");
 var object = require("canis/object");
 var commLog = false;
+var processServer;
+var gcRequested;
 
 if (process.platform == "win32") {
 	var fs = require("fs");
@@ -35,28 +38,30 @@ invokeLambda(prefix, msg, child)
 	})
 }
 
-module.exports =
-function ( context, name, param, flag, callback, config )
+module.exports = function(
+	context, name, param, flag, callback, config, symbol)
 {
-	function invokeLocal ( prefix ) {
-			if ( ! prefix.runtime ) {
-					prefix.runtime = "python"; // XXX
-			}
+	function invokeLocal (prefix) {
+		if (!prefix.runtime) {
+				prefix.runtime = "python"; // XXX
+		}
 		var rtctx = {
 			functionName: name,
+			symbol: symbol
 		};
-		if ( config ) {
-			rtctx.lambdaPrefix = string.resolveCache
-				( config, "lambdaPrefix" )
+		if (config) {
+			rtctx.lambdaPrefix = string.resolveCache(
+				config, "lambdaPrefix" )
 		}
-//		Object.assign( rtctx, param.context );
+//		Object.assign(rtctx, param.context);
 
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
-		module.exports.handler( context, prefix.runtime,
-			prefix.lambda, server.invocationPath(
+		module.exports.handler(
+			context, prefix.runtime, prefix.lambda,
+			server.invocationPath(
 				process.cwd(), string.path(prefix.basePath)),
-			prefix.handler, param, rtctx, callback )
+			prefix.handler, param, rtctx, callback)
 		return;
 		try {
 			param.method = "POST";
@@ -65,7 +70,7 @@ rtctx.aws_request_id = 'reqid'
 
 			/* XXX routine in request.js */
 			r.on = function(n,f) {
-					switch ( n ) {
+					switch (n) {
 						case "data" :
 						f( Buffer.from( r.body === undefined? "" :
 							JSON.stringify(r.body,0,2) ) );
@@ -73,7 +78,7 @@ rtctx.aws_request_id = 'reqid'
 						case "end": f(); break;
 					}
 				}
-			if ( ! prefix.runtime ) {
+			if (! prefix.runtime) {
 					prefix.runtime = "python"; // XXX
 			}
 			return server.invoke( {
@@ -82,28 +87,28 @@ rtctx.aws_request_id = 'reqid'
 				}
 			}, process.cwd(), r, {
 				writeHead: function(s,h) {
-					console.log( s, h );
+					console.log(s, h);
 				},
 				write: function(res) {
-//					console.log( r, typeof(r) );
-					callback( null, res );
+//					console.log(r, typeof(r));
+					callback(null, res);
 				},
 				end: function() {
 //					callback();
 				}
 			}, { fork: context.fork } );
-		} catch ( e ) {
-			if ( e.code !== "MODULE_NOT_FOUND" ) {
+		} catch (e) {
+			if (e.code !== "MODULE_NOT_FOUND") {
 				setTimeout( function() {
-					callback( e );
+					callback(e);
 				} );
 				return true;
 			}
 		}
 	}
 
-	var f = context.get( "canis_invoke" );
-	if ( f !== undefined ) flag = f;
+	var f = context.get("canis_invoke");
+	if (f !== undefined) flag = f;
 
 	var prefix;
 	if (!(flag & module.exports.DISABLE_LOCAL)) {
@@ -125,7 +130,7 @@ rtctx.aws_request_id = 'reqid'
 		}
 	}
 
-	if ( false && !(flag & module.exports.DISABLE_REMOTE) ) {
+	if (!(flag & module.exports.DISABLE_REMOTE)) {
 		// try AWS lambda
 		prefix = context.lambdaPrefix;
 		context.lambda().invoke( {
@@ -133,26 +138,29 @@ rtctx.aws_request_id = 'reqid'
 			InvocationType: 'RequestResponse',
 			LogType: 'Tail',
 			Payload: typeof param === 'string' ? param : JSON.stringify(param)
-		}, function ( err, data ) {
-			if ( err ) {
-				callback( err );
-			} else if ( data.StatusCode == 200 ) {
+		}, function (err, data) {
+			if (err) {
+				callback(err);
+			} else if (data.StatusCode == 200) {
 				// to maintain consistency with calling local function,
 				// assume json formatted result
 				var payload = JSON.parse(data.Payload);
-				if ( data.FunctionError ) callback( payload );
-				else callback( null, payload );
+				if (data.FunctionError)
+					callback(null, JSON.parse(
+						payload.errorMessage));
+				else callback(null, payload);
 			} else {
-				callback( new Error( 'UnexpectedException' ) );
+				callback(new Error('UnexpectedException'));
 			}
 		} );
 	} else {
-		callback( { code: "ResourceNotFoundException" } );
+		callback({code: "ResourceNotFoundException"});
 	}
 };
 
 function
 matchPath(filename, pathenv, plain) {
+	if (pathLib.isAbsolute(filename)) return filename;
 	if (!plain && process.platform === "win32" &&
 		!pathLib.extname(filename)) filename += ".exe";
 	if (pathenv === undefined)
@@ -161,6 +169,94 @@ matchPath(filename, pathenv, plain) {
 	for (var i in pathenv) {
 		var fn = pathenv[i] + pathLib.sep + filename;
 		if (fs.existsSync(fn)) return fn;
+	}
+}
+
+var childTable = {};
+
+function
+executeLocal(exname, arg, option)
+{
+	return child_process.spawn(
+		process.platform != "win32" ? exname :
+		matchPath(exname, pathEnv, false, pathLib),
+		arg, option);
+}
+
+function
+execute(exname, arg, socket, callback)
+{
+	if (socket) {
+		socket(function() {
+			var child = executeLocal(
+				exname, arg, {stdio: ["pipe", "pipe", 2]});
+			childTable[child.pid] = {
+				child: child,
+				callback: callback
+			};
+		});
+	} else {
+		var child = executeLocal(
+			exname, arg, {stdio: ["pipe", "pipe", 2]});
+		callback(child, child.stdout, child.stdin);
+	}
+}
+
+function
+requireList()
+{
+	if (list === undefined) list = require("canis/list");
+	return list;
+}
+
+module.exports.getRuntime = function()
+{
+	requireList();
+	return this.runtime === undefined ? (this.runtime = {
+		active: list.circularHead(),
+		idle: list.circularHead()
+	}) : this.runtime;
+}
+if (false) {
+process.on("SIGTTOU", function() {
+	console.log("SIGTERM!!!!!!!!!!!!!");
+});
+child_process = require("child_process");
+execute("bash", ["-i"], false, function(child, input, output) {
+	var node = {
+		child: child,
+		quit: function() {
+			list.unlinkCircularNode(this);
+			output.write("exit\n");
+		}
+	};
+	requireList().linkCircularNode(
+		module.exports.getRuntime().active, node);
+	input.on("data", function(d) {
+		console.log(d.toString("UTF-8"));
+//if (d[d.length - 1] == 0x04)
+//	console.log("----------------");
+	});
+	child.on("close", function() {
+				list.unlinkCircularNode(node);
+		console.log("XXXXXXXXXXXXXXXXXXXXXX");
+	});
+//	output.write("trap 'return 0' EXIT\n");
+//	output.write("echo $T20_BASE\n");//echo Y & ;echo -e -n '\\x04'\n")
+//	output.write("echo $-\n");//"echo Y & ;echo -e -n '\\x04'\n")
+});
+}
+
+module.exports.gc = function()
+{
+	if (processServer) {
+		gcRequested = true;
+		processServer.getConnections(function(err,count) {
+			if (count <= 0) {
+				processServer.close();
+				processServer = undefined;
+			}
+		});
 	}
 }
 
@@ -177,13 +273,15 @@ module.exports.handler = function(
 		idle = {child: child};
 		child.on("close", function() {
 			list.unlinkCircularNode(idle);
+			if (rt.active.next == rt.active && gcRequested)
+				module.exports.gc();
 			// XXX callback with error
 		});
 	}
-	function activate() {
+	function activate() { /* XXX this need not to be function*/
 		list.linkCircularNode(rt.active, idle);
 	}
-	function sendInvoke() {
+	function sendInvoke() {/* XXX this need not to be function*/
 		child.send({
 			action: "invoke",
 			src: src,
@@ -199,6 +297,69 @@ module.exports.handler = function(
 			ctx: rtctx
 		});
 	}
+
+	function sendResolved(r)
+	{
+		child.send({
+			action: "resolved",
+			body: r
+		});
+	}
+
+	function receiveMessage(d, message) {
+		while (true) {
+			if (size === undefined) {
+				current += d.length;
+				if (current <= 4) {
+					chunk.push(d);
+					return;
+				}
+				if (chunk.length > 0) {
+					chunk.push(d);
+					d = Buffer.concat(chunk);
+					chunk = [];
+				}
+				size = parseInt(d.slice(0,4).toString("hex"),16);
+				d = d.slice(4);
+				current = 4;
+if (commLog) console.log( ">>>>> size ", size,"with payload : ", d.length);
+			}
+			current += d.length;
+			if (current >= size) {
+				var dispatchPacket = function() {
+					message(
+						JSON.parse(Buffer.concat(chunk)));
+					chunk = [];
+					size = undefined;
+					current = 0;
+				};
+				if (current > size) {
+					var end = d.length +
+						size - current;
+					chunk.push(d.slice(0,end));
+if (commLog) console.log(">>>>> Exceeding payload received, end=", end);
+					dispatchPacket();
+					d = d.slice(end);
+					continue;
+				} else {
+if (commLog) console.log(">>>>> Exact payload received");
+					chunk.push(d);
+					dispatchPacket();
+				}
+
+/*							dispatchMessage(
+					JSON.parse(r.slice( 2,
+					2 + parseInt( r.slice(0,2).
+					toString("hex"),16) )) );
+				size = undefined;
+				current = 0;*/
+			} else {
+				chunk.push(d);
+			}
+			break;
+		}
+	}
+
 	var fork = context.get("fork");
 
 	if (path && path.startsWith("/cygdrive/"))
@@ -213,6 +374,7 @@ module.exports.handler = function(
 			throw (e);
 		}
 	} else {
+		requireList();
 		var runtime = fork.runtime;
 		if (runtime === undefined)
 			runtime = fork.runtime = {};
@@ -223,12 +385,8 @@ module.exports.handler = function(
 			else if (rt.idle)
 				break;
 
-			var head = {};
-			head.prev = head.next = head;
-			rt.idle = head;
-			head = {};
-			head.prev = head.next = head;
-			rt.active = head;
+			rt.idle = list.circularHead();
+			rt.active = list.circularHead();
 			break;
 		}
 
@@ -239,7 +397,6 @@ module.exports.handler = function(
 		} else {
 			if (child_process === undefined) {
 				child_process = require("child_process");
-				list = require("canis/list");
 			}
 
 			var dispatchMessage = function(msg) {
@@ -250,17 +407,71 @@ module.exports.handler = function(
 					case "reuse":
 					list.unlinkCircularNode(idle);
 					if (fork.reuse) {
-						console.log("REUSING PROCESS"); //XXX
 						list.linkCircularNode(rt.idle, idle);
 					} else {
 						child.send({action: "exit"});
+						if (child.client) {
+							child.client.normalExit = true;
+							delete child.client
+						}
 					}
 					break;
 					case "invoke":
 					invokeLambda(
 						rtctx.lambdaPrefix, msg, child);
+					break;
+					case "resolve":
+					var resolve = context.get("resolve")
+					if (resolve) {
+						resolve(
+							msg.body, rtctx.symbol,
+							sendResolved
+						);
+					} else {
+						sendResolved(
+							object.clone(msg.body, rtctx));
+					}
+					break;
+					case "command":
+					child.send({
+						action: "command",
+						body: "HELLO!!!"
+					});
 				}
 			};
+			function socket(done) {
+				if (net) {
+					done();
+				} else {
+					net = require("net");
+					processServer = net.createServer(function(client) {
+						client.on("data", function(d) {
+							receiveMessage(d, function(msg) {
+								if (msg.action == "pid") {
+									var t = childTable[msg.pid];
+									delete childTable[msg.pid]
+									t.child.client = client;
+									t.callback(t.child, client, client);
+								}
+							});
+						});
+						client.on("close", function(err) {
+							if (!client.normalExit)
+								callback(new Error(
+									'UNEXPECTED_CLIENT_DISCONNECTION'));
+						});
+					});
+					processServer.listen(31000, function() {
+//						processServer.on('close', function() {
+//							console.log("SOCKCLOSE");
+//						});
+						processServer.on('error', function(err) {
+							console.log("SOCK", err);
+						});
+						done();
+					});
+				}
+			}
 
 			// XXX number of processes should be limited
 			if (rtname === "nodejs") {
@@ -279,6 +490,11 @@ module.exports.handler = function(
 					rt.arg, rtparam) : [];
 				if (rt.ext) arg.push(
 					__dirname + "/runtime/invoke." + rt.ext);
+
+// use socket or pipe
+var sock;// = socket;
+//arg.push(':127.0.0.1');
+
 				if (rt.callback) arg.push(rt.callback);
 				if (rt.extra) {
 					arg.push(".")
@@ -289,78 +505,29 @@ module.exports.handler = function(
 					rt.path, rtparam) : {};
 
 				var exname = rt.exec? rt.exec : rtname
-				child = child_process.spawn(
-					process.platform != "win32" ? exname:
-					matchPath(exname, pathEnv, false, pathLib),
-					arg, {stdio: ["pipe", "pipe", 2]});
 				var chunk = [];
 				var size, current = 0;
-				child.stdout.on("data", function(d) {
-					while (true) {
-						if (size === undefined) {
-							current += d.length;
-							if (current < 4) {
-								chunk.push(d);
-								return;
-							}
-							if (chunk.length > 0) {
-								d = Buffer.concat(chunk);
-								chunk = [];
-							}
-							if (current == 4) {
-	if ( commLog) console.log( ">>>>> only size field received :", size );
-								return;
-							}
-							size = parseInt(d.slice(0,4).toString("hex"),16);
-							d = d.slice(4);
-							current = 4;
-	if ( commLog) console.log( ">>>>> size ", size,"with payload : ", d.length );
-						}
-						current += d.length;
-						if (current >= size) {
-							var dispatchPacket = function() {
-								dispatchMessage(
-									JSON.parse(Buffer.concat(chunk)));
-								chunk = [];
-								size = undefined;
-								current = 0;
-							};
-							if (current > size) {
-								var end = d.length +
-									size - current;
-								chunk.push(d.slice(0,end));
-	if (commLog) console.log( ">>>>> Exceeding payload received, end=", end );
-								dispatchPacket();
-								d = d.slice(end);
-								continue;
-							} else {
-	if ( commLog) console.log( ">>>>> Exact payload received" );
-								chunk.push(d);
-								dispatchPacket();
-							}
-
-/*							dispatchMessage(
-								JSON.parse(r.slice( 2,
-								2 + parseInt( r.slice(0,2).
-								toString("hex"),16) )) );
-							size = undefined;
-							current = 0;*/
-						} else {
-							chunk.push(d);
-						}
-						break;
-					}
+				execute( exname, arg, sock,
+				function(newChild, input, output) {
+					child = newChild;
+					input.on("data", function(d) {
+						receiveMessage(d, dispatchMessage);
+					});
+					child.send = function(o) {
+						var s = Buffer.from(
+							JSON.stringify(o));
+						var b = Buffer.alloc(4);
+						b.writeUInt32BE(s.length);
+						output.write(b);
+						output.write(s);
+					};
+					registerOnClose();
+					activate();
+					sendInvoke();
 				});
-
-				child.send = function(o) {
-					var s = Buffer.from(JSON.stringify(o));
-					var b = Buffer.alloc(4);
-					b.writeUInt32BE(s.length);
-					child.stdin.write(b);
-					child.stdin.write(s);
-				};
+				return;
 			}
-			registerOnClose();
+			registerOnClose(); /* XXX need not to be a func */
 		}
 		activate();
 		sendInvoke();

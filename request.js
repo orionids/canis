@@ -5,35 +5,63 @@
 
 "use strict";
 
-var rl = require( "readline" );
-var fs = require( "fs" );
-var string = require( "canis/string" );
-var object = require( "canis/object" );
-var parser = require( "canis/parser" );
-var context = require( "canis/context" );
-var server = require( "canis/server" );
+var rl = require("readline");
+var fs = require("fs");
+var string = require("canis/string");
+var object = require("canis/object");
+var parser = require("canis/parser");
+var context = require("canis/context");
+var server = require("canis/server");
 var iterator = require("canis/iterator");
 var path = require("path");
 
 function
-clone( request, symbol, callback )
+clone(request, symbol, callback, loose)
 {
 	var resolve = {
 		symbol : symbol === undefined ?
-			[ process.env ] : symbol,
-		ctx : { loose: true }
+			[process.env] : symbol,
+		ctx : {loose: loose == null? true : loose},
+		include: true
 	}
-	var r = object.clone( request, resolve );
-	if ( r.init ) r.init( r, callback, resolve );
-	else process.nextTick( callback, r );
+	var r = object.clone(request, resolve);
+	if (r) {
+		if (r.init) r.init(r, callback, resolve);
+		else process.nextTick(callback, r);
+	} else {
+		callback(null, resolve.ctx.symbol);
+	}
 }
 
-exports.override = function( target, source ) {
-	for ( var s in source ) {
-		if ( source.hasOwnProperty(s) ) {
+function
+cloneTC(request, symbol, callback, loose)
+{
+	var next = request.next;
+	var resolved = request.resolved;
+	request.next = undefined
+	clone(request, symbol, function(r,symbol) {
+		context.testCase = r;
+		if (next) {
+			if (r) r.next = next
+			request.next = next;
+		}
+		if (resolved) {
+			if (r) r.resolved = resolved;
+			request.resolved = resolved;
+		}
+		callback(r, symbol);
+	}, loose);
+}
+
+if (context.get("resolve") === undefined)
+	context.set("resolve", clone);
+
+exports.override = function(target, source) {
+	for (var s in source) {
+		if (source.hasOwnProperty(s)) {
 			var sv = source[s];
-			if ( typeof sv === 'object' ) {
-				exports.override( target[s], sv );
+			if (typeof sv === 'object') {
+				exports.override(target[s], sv);
 			} else {
 				target[s + "_orig"] = target[s];
 				target[s] = sv;
@@ -45,100 +73,103 @@ exports.override = function( target, source ) {
 function
 invokeLambda(api,symbol,request,response,local)
 {
-	var invoke = require( "canis/invoke" );
+	var invoke = require("canis/invoke");
 
-	var name = request.url;
-	if ( local ) {
+	var apiConfig = api? api.configuration : undefined
+	if (local) {
 //		context.['^' +  = api;
-	} else if ( context.lambdaPrefix === undefined ) {
+	} else if (context.lambdaPrefix === undefined && apiConfig) {
 // XXX overwritten case
 		context.lambdaPrefix =
-			string.resolve(api.configuration.lambdaPrefix,symbol);
+			string.resolve(apiConfig.lambdaPrefix,symbol);
 	}
 
-	invoke( context, request.url, request.body,
+	invoke(context, request.api, request.payload,
 		local? invoke.DISABLE_REMOTE : invoke.DISABLE_LOCAL,
 		function(err,data) {
 			response.writeHead(err?err.statusCode:200,{});
 			response.write(data?typeof(data)=="string"?
 				data:JSON.stringify(data):"");
-		}, api.configuration );
+			response.end();
+		}, apiConfig, symbol);
 }
 
 exports.https = function(
 	context, api, basepath, request, response, param)
 {
 	var httpreq, https, symbol;
-	if ( param ) {
+	if (param) {
 		httpreq = param.httpreq;
 		https = param.https;
 		symbol = param.symbol;
 	}
-	clone( request, symbol, function(r) {
-		if( r ) {
+	cloneTC( request, symbol, function(r) {
+		if(r) {
 			var apiInfo = param.apiInfo ? param.apiInfo(r) : {};
 
-			if ( request.method == "INVOKE" ) {
-					invokeLambda(api,symbol,request,response);
+			if (request.method == "INVOKE") {
+					invokeLambda(api,symbol,r,response);
 			} else {
-				if ( httpreq === undefined ) httpreq = require( "canis/httpreq" );
-				if ( https === undefined ) https = require( "https" );
-				var url = apiInfo.stage ? r.url : r.urlStage + r.url;
-				r.path = basepath && !apiInfo.set ?
-					basepath + url : url;
-				httpreq( https, r, function( err, data, res ) {
-					if ( err ) {
-						response.writeHead( err.statusCode );
-						response.write( err.message );
-						response.end( err.message );
-						//console.log( err );
+				if (httpreq === undefined ) httpreq = require( "canis/httpreq");
+				if (https === undefined ) https = require( "https");
+				var apipath = apiInfo.stage ? r.api : r.stage + r.api;
+				r.path = basepath && !apiInfo.set?
+					(apiInfo.base? apiInfo.base : basepath) + apipath : apipath;
+				httpreq(https, r, function( err, data, res) {
+					if (err) {
+						response.writeHead(err.statusCode);
+						response.write(err.message);
+						response.end(err.message);
+						//console.log(err);
 					} else {
-						response.writeHead( res.statusCode, res.headers );
-						response.write( data );
-						response.end( data );
+						response.writeHead(res.statusCode, res.headers);
+						response.write(data);
+						response.end(data);
 					}
 				} );
 			}
 		}
-	} );
+	}, true);
 //XXX exception
 };
 
 exports.http = function
-( context, api, basepath, request, response, param ) {
+(context, api, basepath, request, response, param) {
 	var p = {
 		https: require("http")
 	};
-	Object.assign( p, param );
+	Object.assign(p, param);
 	exports.https( server, api, basepath,
 		request, response, p );
 }
 
 exports.local = function
-( context, api, basepath, request, response, param ) {
+(context, api, basepath, request, response, param) {
 	var symbol;
-	if ( param ) symbol = param.symbol;
-	clone(request, symbol, function (r) {
-		if ( r.method == "INVOKE" ) {
-			context.fork = param.fork;
-			invokeLambda(api,symbol,r,response, true);
+	if (param) symbol = param.symbol;
+	cloneTC(request, symbol, function (r, name) {
+		if(r) {
+			if (r.method == "INVOKE") {
+				context.fork = param.fork;
+				invokeLambda(api,symbol,r,response, true);
+			} else {
+				r.on = function(n,f) {
+					switch (n) {
+						case "data" :
+						f( Buffer.from( r.body === undefined? "" :
+							JSON.stringify(r.body,0,2) ) );
+						break;
+						case "end": f(); break;
+					}
+				};
+				if (r.stage) r.api = r.stage + r.api;
+				return server.invoke(context, api, basepath, r, response, param);
+			}
 		} else {
-				if( r ) {
-					r.on = function(n,f) {
-						switch ( n ) {
-							case "data" :
-							f( Buffer.from( r.body === undefined? "" :
-								JSON.stringify(r.body,0,2) ) );
-							break;
-							case "end": f(); break;
-						}
-					};
-					if ( r.urlStage ) r.url = r.urlStage + r.url;
-					return server.invoke( context, api, basepath, r, response, param );
-				}
-		// XXX exception
+console.log("Symbol not found!!!!!!!!!!1", name)
+response.end();
 		}
-	});
+	}, false);
 };
 
 function
@@ -153,10 +184,10 @@ postman_evaluator(detail,req)
 //		"if (pm.environment.get('region') !== 'kic') return;"
 	];
 	var conditional = req.conditional;
-	if ( conditional )
-		code.push( "if ( !(" + fconv(conditional) + ")() ) return;" );
+	if (conditional)
+		code.push("if ( !(" + fconv(conditional) + ")() ) return;");
 
-	code.push( "pm.test(\"" + detail + "\", function() {" );
+	code.push("pm.test(\"" + detail + "\", function() {");
 
 	code.push(
 		"\tpm.expect(pm.response.code).to.be.oneOf([" +
@@ -164,28 +195,28 @@ postman_evaluator(detail,req)
 
 	var sym = req.symbol;
 	var result = req.result;
-	if ( sym || result ) {
+	if (sym || result) {
 		code.push( "\tvar headers = {};\n" +
 		"\tvar h = pm.response.headers.all();\n" +
 		"\tfor ( var i = 0; i < h.length; i++) {\n" +
 		"\t\tvar hi = h[i];\n" +
 		"\t\theaders[hi.key] = hi.value;\n" +
 		"\t}\n" );
-		code.push( "\tvar response = { \"headers\": headers,\"body\" : JSON.parse(responseBody) };" );
+		code.push("\tvar response = { \"headers\": headers,\"body\" : JSON.parse(responseBody) };");
 	}
-	if ( sym ) {
-		for ( var attr in sym ) {
+	if (sym) {
+		for (var attr in sym) {
 			code.push( "\tpm.environment.set( \"" + attr +
 				"\", response.body." + sym[attr] + " );" );
 		}
 	}
 
-	if ( result ) {
+	if (result) {
 		code.push( "\t(" + fconv(result) +
 			")(response,function(r){" );
 		code.push(	"\t\tpm.expect(r).to.be.true;\n\t});" );
 	}
-	code.push( "});" );
+	code.push("});");
 
 	return code;
 }
@@ -213,8 +244,8 @@ postman_generate(context,request,param)
 	var method = request.method
 
 	var header = []
-	for ( var key in request.headers ) {
-		if ( key.toLowerCase() != "origin" ) {
+	for (var key in request.headers) {
+		if (key.toLowerCase() != "origin") {
 			var constant = request.constant;
 			var cfgval = config.header[key];
 			header.push( {
@@ -237,30 +268,30 @@ postman_generate(context,request,param)
 	);
 
 	var body = {};
-	switch ( method ) {
+	switch (method) {
 		case "POST":
 		case "PUT":
 		body.mode = "raw";
 		body.raw = JSON.stringify(request.body);
 	}
 
-	var url = request.url;
-	var qp = server.queryParameter(url);
+	var apipath = request.api;
+	var qp = server.queryParameter(apipath);
 	var qpi = qp.index;
-	var name = url.substring(0,qpi > 0? qpi : undefined);
+	var name = apipath.substring(0,qpi > 0? qpi : undefined);
 
 	var path = config.path;
 	var info = {};
 	var information = request.information;
-	if ( information ) {
-		information( info );
-		if ( path === undefined ) path = info.path;
+	if (information) {
+		information(info);
+		if (path === undefined) path = info.path;
 	}
 
-	if ( path === undefined ) {
+	if (path === undefined) {
 		var apiset = request.apiSet;
-		if ( apiset ) {
-			if ( Array.isArray(apiset) ) apiset = apiset[0];
+		if (apiset) {
+			if (Array.isArray(apiset)) apiset = apiset[0];
 			path = [apiset.substring(apiset.lastIndexOf('/') + 1)]
 		} else {
 			path = [];
@@ -269,42 +300,42 @@ postman_generate(context,request,param)
 
 	var i = 1, j;
 	var p = name;
-	while ( (j = name.indexOf('/',i) ) > 0 ) {
-		path.push( name.substring(i,j) );
+	while ((j = name.indexOf('/',i) ) > 0) {
+		path.push(name.substring(i,j));
 		i = j + 1;
 	}
-	path.push( name.substring(i) );
+	path.push(name.substring(i));
 
 	name = request.name? request.name : method + " " + name;
-	if ( request.nameSuffix ) {
-		if ( config.nameSuffixSeparator )
+	if (request.nameSuffix) {
+		if (config.nameSuffixSeparator)
 			name += config.nameSuffixSeparator;
 		name += request.nameSuffix;
 	}
 	var base = config.base;
-	var pmurl = { "raw": base + url, "path": path }
+	var pmurl = { "raw": base + apipath, "path": path }
 	i = base.indexOf(":");
-	if ( i > 0 ) {
+	if (i > 0) {
 		pmurl.protocol = base.substring(0,i);
 		i += 2;
 	}
 
 	var host = [];
-	while ( i !== undefined ) {
+	while (i !== undefined) {
 		j = base.indexOf('.',++i);
-		if ( j < 0 ) {
+		if (j < 0) {
 			j = base.indexOf('/',i);
-			if ( j < 0 ) j = undefined;
+			if (j < 0) j = undefined;
 		}
-		host.push( base.substring(i,j) );
+		host.push(base.substring(i,j));
 		i = j;
 	}
 	pmurl.host = host;
 
-	if ( qpi > 0 ) {
+	if (qpi > 0) {
 		var query = []
-		for ( var a in qp.param ) {
-			query.push( { key : a, value: qp.param[a] } )
+		for (var a in qp.param) {
+			query.push({ key : a, value: qp.param[a] })
 		}
 		pmurl.query = query;
 	}
@@ -317,7 +348,7 @@ postman_generate(context,request,param)
 				"listen": "test",
 				"script": {
 					"exec": postman_evaluator
-						( detail? detail : name, request ),
+						(detail? detail : name, request),
 				}
 			}
 		],
@@ -325,17 +356,17 @@ postman_generate(context,request,param)
 			"method": method,
 			"header": header,
 			"body": body,
-			"url": pmurl
+			"api": pmurl
 		},
 		response: []
 	};
 
-	if ( config.id ) {
+	if (config.id) {
 		tc.event[0].script.id = config.id;
 		tc.event[0].script.type = "text/javascript";
 	}
 
-	if ( request.sleep > 0 ) {
+	if (request.sleep > 0) {
 		tc.event.push( {
 			"listen": "prerequest",
 			"script": {
@@ -348,19 +379,19 @@ postman_generate(context,request,param)
 				]
 			}
 		})
-		//if ( config.id ) {
+		//if (config.id) {
 		//	tc.event[0].script.id = config.id;
 		//	tc.event[0].script.type = "text/javascript";
 		//}
 	}
 
-//	console.log( tc );
+//	console.log(tc);
 	var tab = config.tab;
 	var s = JSON.stringify(tc,null,tab? tab : "\t");
 	var shift = config.shift;
-	if ( shift === undefined ) shift = "";
+	if (shift === undefined) shift = "";
 	s = shift + s.replace(/\n/g,"\n" + shift)
-	console.log( s );
+	console.log(s);
 //		r = c + "\"" + r.replace(/\t/g,"\\t" ).
 }
 
@@ -372,17 +403,17 @@ upperFirst(s)
 }
 
 exports.postman = function
-	( context, api, basepath, request, response, param ) {
+	(context, api, basepath, request, response, param) {
 	var symbol;
-	if ( param ) symbol = param.symbol;
-	clone( request, symbol, function(r) {
+	if (param) symbol = param.symbol;
+	cloneTC( request, symbol, function(r) {
 		postman_generate(context,r,param);
 	});
 }
 
 
 exports.resolve = function
-	( context, api, base, request, response, param )
+	(context, api, base, request, response, param)
 {
 	function modify(s, op) {
 		if (s) {
@@ -408,7 +439,8 @@ exports.resolve = function
 	}
 
 	var method;
-	var matched = [];
+	var arg = []
+	var matched = request.api.substring(1).split('/');
 	var resolve = param.resolve;
 
 	var symbol = object.clone(
@@ -417,43 +449,54 @@ exports.resolve = function
 		var f, target;
 		if (Array.isArray(symbol)) {
 			target = {}
-			symbol.push(target);
+			symbol.unshift(target);
 		} else {
 			target = symbol;
 			f = symbol['?']
 		}
-		target['?'] = function(ctx,s) {
+		target['?'] = function
+		resolveSymbol(ctx, s, symbol, explicit) {
+			var val;
+			var i = s.indexOf('=');
+			if (i > 0) {
+				val = resolveSymbol(ctx, s.substring(0, i),
+					symbol, explicit);
+				if (val) return val;
+				arg.push(s); // only undefined symbols as arg
+				return s.substring(i + 1);
+			} else {
+			}
+			var last;
+			var op = [];
 			var pc = parser.context(s);
 			var name = parser.token(pc);
-			var op = [];
-			var val;
-			var last;
 
-			while ((last = parser.last(
-				pc)) == '.' || last == '=') {
+			while ((last = parser.last(pc)) == '.' || last == '=') {
 				var operand = parser.token(pc);
 				if (operand) {
-					if (last == '.') op.push(operand);
-					else val = operand;
+					if (last == '.') {
+						op.push(operand);
+					} else {
+						val = operand;
+						break;
+					}
 				} else {
 				}
 			}
-
-			var pathOnly;
+			var r, pathOnly;
 			switch (name) {
 				case "API_PATH_ONLY": pathOnly = true;
 				case "API_PATH":
 				var resolved;
-				for (var i = 0; i < matched.length; i++) {
+				for (i = 0; i < matched.length; i++) {
 					var m = matched[i];
 					if (pathOnly) {
 						if (m.charAt(1) == '{') continue;
-						m = m.substring(1);
 					}
 					resolved = resolved === undefined?
 						(op == "camel" ? m : modify(m,op)) :
 						(resolved + modify(
-							pathOnly? last + m : m,op));
+							last + m, op));
 				}
 				return resolved;
 				case "API_METHOD":
@@ -465,34 +508,28 @@ exports.resolve = function
 				case "LAMBDA_HANDLER":
 				return "lambda_handler"; // XXX
 				case "LAMBDA_RUNTIME":
-				return "python3.8"; // XXX
-				default:
-				if (name.startsWith("ARG")) {
-					// XXX ARG support
-					if (val) return val;
-				} else {
-					var r = string.symbol(name,param.symbol);
-					if (val !== undefined) { // there is conditional value
-						if (r != val) return undefined; // resolved value doesn't match conditional value
-					}
-					return modify(
-						r === undefined? name : r, op);
-				}
+				return "python3.9"; // XXX
 			}
-			//if ( f ) return f( ctx, s );
+			name = string.symbol(name, param.symbol, true);
+//				if (val !== undefined) { // there is conditional value
+//					if (r != val) return undefined; // resolved value doesn't match conditional value
+//				}
+			if (name === undefined) return undefined;
+			return modify(name, op);
+			//if (f ) return f( ctx, s);
 		}
 	}
 	clone(request, param.symbol, function (r) {
 		// XXX dup code
-		if (r.urlStage) r.url = r.urlStage + r.url;
+		if (r.stage) r.api = r.stage + r.api;
 		// to get matched, call server.invoke
 		r.on = function() {};
-		method = server.invoke(
-			context, api, base, r, response, param, matched);
+//		method = server.invoke(
+//			context, api, base, r, response, param, matched);
 
 		var t = 0;
 		var template = resolve.template;
-		( function iterate() {
+		(function iterate() {
 			var fileName = template[t];
 			var rlif = rl.createInterface( {
 				input: fs.createReadStream(fileName),
@@ -500,16 +537,17 @@ exports.resolve = function
 			} );
 			var contents = [];
 			rlif.on( "line", function(l) {
-				l = string.resolve( l, symbol, {
+				if (l = string.resolve(l, symbol, {
 					delim: resolve? resolve.delim : undefined
-				} );
-				if ( l ) contents.push(l);
+				})) contents.push(l);
 			} );
 			rlif.on( "close", function() {
 				var i = t++;
 				resolve.complete( i, fileName,
-					contents.join('\n'),
-					t < template.length ? iterate : undefined )
+					arg, contents.join('\n'),
+					t < template.length ?
+					iterate : undefined );
+				arg = [];
 			} );
 		})();
 	});
@@ -546,33 +584,35 @@ exports.iterate = function( context, target, symbol,
 	};
 
 	function perform() {
-		callback( i, symbol.length );
-		if ( i < symbol.length ) {
+		callback(i, symbol.length);
+		if (i < symbol.length) {
 			e.symbol[0] = symbol[i++];
 			callee[target]( context, api, basepath,
 				request, r, e );
+		} else {
+			require("canis/invoke").gc();
 		}
 	}
 	var e = {};
-	for ( var p in param ) {
-		if ( param.hasOwnProperty(p) ) e[p] = param[p];
+	for (var p in param) {
+		if (param.hasOwnProperty(p)) e[p] = param[p];
 	}
 
 	var s = e.symbol;
-	if ( s === undefined ) {
+	if (s === undefined) {
 		e.symbol = [ null, process.env ];
-	} else if ( Array.isArray(s) ) { // assume array
+	} else if (Array.isArray(s)) { // assume array
 		e.symbol = [ null ];
-		for ( i = 0; i < s.length; i ++ ) {
-			e.symbol.push( s[i] );
+		for (i = 0; i < s.length; i ++) {
+			e.symbol.push(s[i]);
 		}
-		e.symbol.push( process.env );
+		e.symbol.push(process.env);
 	} else { // assume object
 		e.symbol = [ null, s, process.env ];
 	}
 
 	i = 0;
-	if ( !symbol || symbol.length <= 0 ) symbol = [ null ];
+	if (!symbol || symbol.length <= 0) symbol = [ null ];
 	perform();
 };
 
@@ -598,7 +638,7 @@ exports.load = function(
 			return {api: api, name: name}
 	}
 	if (lambdaInfo) {
-		var i = filePath.indexOf( "/" );
+		var i = filePath.indexOf("/");
 		var basePathConf;
 		var feature = "";
 		var handler;
@@ -613,29 +653,30 @@ exports.load = function(
 			serverPath = lambdaInfo;
 			handler = undefined;
 		}
-		if ( i > 0 ) {
-			var apiInfo;
-
-			apiInfo = loadAPI(
+		while (i > 0) {
+			var apiInfo = loadAPI(
 				type? type : filePath.substring(0, i));
 			if (!apiInfo) {
-				var j = filePath.indexOf( "/", ++i );
+				var j = filePath.indexOf("/", ++i);
 				apiInfo = loadAPI(type && feature?
-					type + "/" + feature : filePath.substring(0, j));
+					type + "/" + feature :
+					filePath.substring(0, j));
 				if (!apiInfo) {
-					apiInfo = loadAPI(
-						feature? feature : filePath.substring(i, j));
-					// - <--- XXX
-					feature = apiInfo.name + "-"
+					apiInfo = loadAPI( feature? feature :
+						filePath.substring(i, j));
+					if (!apiInfo) break;
+					feature = apiInfo.name + "-";
 				}
 			}
 
 			basePathConf = apiInfo.api.configuration.basePath;
 			serverPath += "/" + apiInfo.name;
+			break;
 		}
 
+		if (basepath == null) basepath = ".";
 		var index = filePath.lastIndexOf("/");
-		var name = feature + ( index >= 0 ? filePath.substring(index + 1 ) : filePath );
+		var name = feature + (index >= 0 ? filePath.substring(index + 1 ) : filePath);
 		var src = path.normalize(string.path(basepath)) +
 			path.sep + filePath + ".py";
 		var cwd = process.cwd();
@@ -653,7 +694,7 @@ exports.load = function(
 		return {
 			apiSet: serverPath,
 			method: "INVOKE",
-			url: name
+			api: name
 		}
 	}
 	return object.load(basepath + "/" + filePath);
@@ -706,5 +747,34 @@ exports.traverse = function(
 		return iter;
 	})(space);
 }
+
+try {
+	var validator = require("jsonschema").Validator;
+} catch(e) {
+	validator = require("canis/validator");
+}
+
+exports.evaluate = function(tc, code, response)
+{
+	var success = tc.success;
+	if (!success) return false;
+	if (typeof success === 'string')
+		success = tc.success = require(success);
+
+	var error = tc.error;
+	if (code != null && code != success.statusCode) {
+		tc.error = true;
+		return false;
+	}
+	if (response != null && success.response) {
+		var result = new validator().validate(
+			response, success.response);
+		if (result.errors.length > 0) {
+			tc.error = true;
+			return false;
+		}
+	}
+	return error? false : true;
+}
+
 // EOF
-//

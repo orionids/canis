@@ -4,24 +4,24 @@
 // Distributed under ISC
 
 
-exports.argv = function ( optionContext, action ) {
-	if ( action == 'next' ) {
+exports.argv = function (optionContext, action) {
+	if (action == 'next') {
 		var ctx = optionContext.context;
 		var i = ctx.i;
-		if ( i === undefined ) i = 2;
+		if (i === undefined) i = 2;
 		else i = i + 1;
 		ctx.i = i;
-		if ( i < ctx.argv.length ) return ctx.argv[i];
+		if (i < ctx.argv.length) return ctx.argv[i];
 	}
 	return null;
 }; 
 
-exports.help = function ( longOption, charOption ) {
+exports.help = function (longOption, charOption) {
 	var option = charOption;
-	for ( var i = 0; i < 2; i++ ) {
-		for ( var o in option ) {
-			if ( option.hasOwnProperty(o) )
-				console.log( o + " : " + option[o].comment );
+	for (var i = 0; i < 2; i++) {
+		for (var o in option) {
+			if (option.hasOwnProperty(o))
+				console.log(o + " : " + option[o].comment);
 		}
 		option = longOption;
 	}
@@ -30,12 +30,12 @@ exports.help = function ( longOption, charOption ) {
 // this function corresponds to stroptString in Coral library, but
 // no case to get partial string of the current arg because
 // that is passed to parameter of an option dispacher
-exports.next = function ( optionContext ) {
-	return optionContext.invoke( optionContext, 'next' );
+exports.next = function (optionContext) {
+	return optionContext.invoke(optionContext, 'next');
 };
 
 // simplified implementation of stropt in Coral library
-// indicator for char options is '-', and character options are combinated ( -xzvf )
+// indicator for char options is '-', and character options are combinated (-xzvf)
 // indicator for string options is '--' and delimiter is applied for string options
 
 // typically = is used for delimiter but : is suggested because batch file doesn't
@@ -44,36 +44,39 @@ exports.next = function ( optionContext ) {
 
 // unknown options are strictly checked
 
-exports.parse = function
-	( optionContext, delimiter, longOption, charOption ) {
+exports.parse = function(
+	optionContext, delimiter, longOption, charOption)
+{
 	var arg;
-	while ( ( arg = this.next( optionContext ) ) ) {
+	while ((arg = this.next(optionContext))) {
 		var longNameIndex = 1;
-		if ( arg.charAt(0) == '-' ) {
+		if (arg.charAt(0) == '-') {
 			var i;
 			var o;
-			if ( optionContext.singleIndicator ||
-				arg.charAt(longNameIndex++) == '-' ) {
-				if ( !longOption ) return undefined;
-				i = arg.lastIndexOf( delimiter );
+			if (optionContext.singleIndicator ||
+				arg.charAt(longNameIndex++) == '-') {
+				if (!longOption) return undefined;
+				i = arg.lastIndexOf(delimiter);
 				var p;
-				if ( i > 0 ) {
+				if (i > 0) {
 					p = arg.substring(i + 1);
 				} else {
 					i = undefined;
 				}
 				o = longOption
 					[arg.substring(longNameIndex,i)];
-				if ( o === undefined ) return undefined;
-				if ( o.dispatch( p, optionContext ) ) return null;
+				if (o === undefined) return undefined;
+				if (o.dispatch(p, optionContext))
+					return null;
 			} else {
-				if ( !charOption ) return undefined;
+				if (!charOption) return undefined;
 				for (i = 1;; i++) {
 					o = arg.charAt(i);
-					if ( o == '' ) break;
+					if (o == '') break;
 					o = charOption[o];
-					if ( o === undefined ) return undefined;
-					if ( o.dispatch( undefined, optionContext ) ) return null;
+					if (o === undefined) return undefined;
+					if (o.dispatch(undefined, optionContext))
+						return null;
 				}
 			}
 		} else {

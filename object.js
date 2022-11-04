@@ -27,10 +27,35 @@ exports.load = function(file, param) {
 
 exports.attribute = function(o, a)
 {
-	if (typeof a === 'string') a = a.split(".");
+	if (typeof a === "string") a = a.split(".");
+	var pref = "";
+	retry:
 	for (var i = 0; i < a.length; i++) {
 		if (o === undefined) break;
-		o = o[a[i]];
+		pref += a[i];
+		var list = pref.split("[");
+		for (var l = 0; l < list.length; l++) {
+			var item = list[l];
+			if (item.indexOf(']') > 0)
+				o = o[parseInt(item)];
+			else if (o.hasOwnProperty(item))
+				o = o[item];
+			else {
+				// for example, for attribute a.b.c.d,
+				// assume "a": { "b": { "c": ... or
+				// "a": { "b.c": ... are possible but
+				// "a.b.c": ... is not possible and
+				// some mixed cased with . and [ can cause
+				// potential conflicts ignored in the impl.
+				if (i + 1 < a.length) {
+					pref += ".";
+					continue retry;
+				}
+				throw TypeError("NO_ATTRIBUTE");
+			}
+			if (o === undefined) break;
+		}
+		pref = "";
 	}
 	return o;
 };
@@ -42,16 +67,66 @@ exports.conditional = function(o, a, i)
 		(o[a] = i === undefined? {} : i) : v;
 }
 
+
+// object -> object : assign
+// array -> object : unavailable
+// object -> array : an item
+// array -> array : insert
+
 exports.clone = function(o, r, base)
 {
 	function clone(o, r, base) {
 		return r.recursive === false ?
 			o : exports.clone(o, r, base);
 	}
+
+	function include(o, perform, k, l, li)
+	{
+		if (Array.isArray(k))
+			k = k[0];
+		if (k !== inc) return false;
+		var len;
+		if (Array.isArray(l)) {
+			len = l.length;
+		} else {
+			l = [l];
+			len = 1;
+		}
+		while (li < len) {
+			var p = l[li];
+			if (typeof(p) === 'string') {
+				p = string.resolve(p, r.symbol, r.ctx);
+				if (p === undefined) return undefined;
+				try {
+					p = incload(p);
+				} catch(e) {
+					return undefined;
+				}
+			}
+			p = clone(p, r);
+			perform(o, p, li)
+			li++;
+		}
+		return true;
+	}
 	if (o === null) return null;
 	if (r === undefined) r = {};
+	var incload;
+	var inc = r.include;
+	if (inc) {
+		for(;;) {
+			if (typeof(inc) === 'object') {
+				incload = inc.load;
+				inc = inc.keyword;
+				if (inc) break;
+			}
+			inc = "[[INCLUDE]]";
+			break;
+		}
+		if (incload === undefined) incload = require;
+	}
 	if (Array.isArray(o)) {
-		var newa = new Array(o.length);
+		var newa;
 		if (base) {
 			if (base.lenth < o.length)
 				base.concat(new Array(o.length - base.length));
@@ -59,10 +134,29 @@ exports.clone = function(o, r, base)
 		} else {
 			newa = new Array(o.length);
 		}
-		for (var i = 0; i < o.length; i++) {
+		for (var i = 0, newi = 0; i < o.length; i++, newi++) {
 			var oi = o[i];
 			if (oi !== undefined) {
-				if ((newa[i] = clone(oi, r, newa[i])) === undefined)
+				switch (include(newa, function(dst,src, li) {
+					function add(s) {
+						if (li > 1) {
+							newa.push();
+							newi++;
+						}
+						newa[newi] = s;
+					}
+					if (Array.isArray(src))
+						for (var s = 0; s < src.length; s++)
+							add(src[s]);
+					else add(src);
+					return true;
+				}, oi, oi, 1)) {
+					case undefined:
+					if (!r.partial) return undefined;
+					case true:
+					continue;
+				}
+				if ((newa[newi] = clone(oi, r, newa[newi])) === undefined)
 					return undefined;
 			}
 		}
@@ -73,7 +167,19 @@ exports.clone = function(o, r, base)
 		for (var p in o) {
 			if (o.hasOwnProperty(p)) {
 				var op = o[p];
+//XXX ?
+				if (p== "next"){ newo["next"] = op; continue;}
 				if (op !== undefined) {
+					switch (include(newo, function(dst,src) {
+						if (Array.isArray(src)) return false;
+						Object.assign(dst, src);
+						return true;
+					}, p, op, 0)) {
+						case undefined:
+						if (!r.partial) return undefined;
+						case true:
+						continue;
+					}
 					if (r.ctx) r.ctx.property = p;
 					var resolved = typeof p === "string" && r?
 						string.resolve(p, r.symbol, r.ctx) : p

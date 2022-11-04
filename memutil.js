@@ -164,7 +164,7 @@ exports.memSetClipboard = function(data, callback)
 	switch (process.platform) {
 		case "darwin":  cmd = "pbcopy"; break;
 		case "win32": cmd = "orion -[wclip] -q"; break;
-		default: cmd = "xclip";
+		default: cmd = "xsel -b";
 	}
 	require("child_process").exec(
 		"echo -n " + data + "|" + cmd, {
