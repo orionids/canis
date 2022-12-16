@@ -36,7 +36,7 @@ var s = server.main ( context, [
 		server.close( s );
 		console.log( "Bye~" );
 	},
-	port : 5000, // default is 3000
+	port : 50000, // default is 3000
 	client: true // manage clients
 
 } );

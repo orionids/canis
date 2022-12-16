@@ -292,8 +292,8 @@ context, api, basepath, request, response, param)//, matched)
 		// automatically transfer path parameter without mapping template
 		pathParameters[name] = s.substring(base + 1);
 	}
-	var pathParameters; // pathParameter is undefined if no path parameters in AWS
 
+	var pathParameters; // pathParameter is undefined if no path parameters in AWS
 	var apipath = request.url; // std form of nodejs
 	if (!apipath) {
 		apipath = request.api; // support api attr too
