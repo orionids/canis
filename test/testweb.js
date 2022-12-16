@@ -15,7 +15,8 @@ exports.body = {
 		//"apiKey" : "1234",
 		// optional aws specific parameters
 		"aws-gatewayRegion" : "ap-northeast-2",
-		"aws-lambdaRegion" : ""
+		"aws-lambdaRegion" : "",
+		directoryIndex: true
 	},
 	"" : {
 		"GET": {

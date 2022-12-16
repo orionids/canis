@@ -75,13 +75,20 @@ exports.conditional = function(o, a, i)
 
 exports.clone = function(o, r, base)
 {
-	function clone(o, r, base) {
-		return r.recursive === false ?
+	function clone(o, r, base, attr) {
+		var result;
+		if (attr && r.push) {
+			result = r.push(attr, o);
+			if (result !== undefined) return result;
+		}
+		result = r.recursive === false ?
 			o : exports.clone(o, r, base);
+		if (attr && r.pop)
+			r.pop(attr);
+		return result;
 	}
 
-	function include(o, perform, k, l, li)
-	{
+	function include(o, perform, k, l, li) {
 		if (Array.isArray(k))
 			k = k[0];
 		if (k !== inc) return false;
@@ -131,13 +138,15 @@ exports.clone = function(o, r, base)
 			if (base.lenth < o.length)
 				base.concat(new Array(o.length - base.length));
 			newa = base;
+			if (r.list) r.list(newa, false);
 		} else {
 			newa = new Array(o.length);
+			if (r.list) r.list(newa, true);
 		}
 		for (var i = 0, newi = 0; i < o.length; i++, newi++) {
 			var oi = o[i];
 			if (oi !== undefined) {
-				switch (include(newa, function(dst,src, li) {
+				switch (include(newa, function(dst, src, li) {
 					function add(s) {
 						if (li > 1) {
 							newa.push();
@@ -156,10 +165,13 @@ exports.clone = function(o, r, base)
 					case true:
 					continue;
 				}
-				if ((newa[newi] = clone(oi, r, newa[newi])) === undefined)
+				if ((oi = clone(oi, r, newa[newi])) === undefined)
 					return undefined;
+				newa[newi] = oi;
+				if (r.list) r.list(oi, newi);
 			}
 		}
+		if (r.list) r.list(undefined, undefined);
 		return newa;
 	} else switch (typeof o) {
 		case "object":
@@ -167,8 +179,6 @@ exports.clone = function(o, r, base)
 		for (var p in o) {
 			if (o.hasOwnProperty(p)) {
 				var op = o[p];
-//XXX ?
-				if (p== "next"){ newo["next"] = op; continue;}
 				if (op !== undefined) {
 					switch (include(newo, function(dst,src) {
 						if (Array.isArray(src)) return false;
@@ -186,7 +196,7 @@ exports.clone = function(o, r, base)
 					if (r.partial && !resolved) continue;
 					if ((newo[
 							resolved
-						] = clone(o[p], r, newo[resolved])) === undefined) {
+						] = clone(o[p], r, newo[resolved], resolved)) === undefined) {
 						if (r.partial) continue;
 						return undefined;
 					}
