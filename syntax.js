@@ -1,7 +1,11 @@
 // vim: ts=4 sw=4 noet :
 
+var fs = require("fs");
 var syntax = require("canis/context").module(
 	"ge/web/syntax", "@orionids/Orion");
+
+// XXX In Windows!
+var off = fs.statSync("/dev/stdout").isFile();
 
 exports.html = syntax.html;
 
@@ -22,6 +26,6 @@ exports.consoleColor = {
 
 exports.highlight = function(s, r, c)
 {
-	return syntax.highlight(
+	return off? s : syntax.highlight(
 		s, r? r : this.console, c? c: this.consoleColor);
 }

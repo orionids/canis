@@ -217,6 +217,7 @@ module.exports.getRuntime = function()
 		idle: list.circularHead()
 	}) : this.runtime;
 }
+
 if (false) {
 process.on("SIGTTOU", function() {
 	console.log("SIGTERM!!!!!!!!!!!!!");
@@ -234,16 +235,10 @@ execute("bash", ["-i"], false, function(child, input, output) {
 		module.exports.getRuntime().active, node);
 	input.on("data", function(d) {
 		console.log(d.toString("UTF-8"));
-//if (d[d.length - 1] == 0x04)
-//	console.log("----------------");
 	});
 	child.on("close", function() {
-				list.unlinkCircularNode(node);
-		console.log("XXXXXXXXXXXXXXXXXXXXXX");
+		list.unlinkCircularNode(node);
 	});
-//	output.write("trap 'return 0' EXIT\n");
-//	output.write("echo $T20_BASE\n");//echo Y & ;echo -e -n '\\x04'\n")
-//	output.write("echo $-\n");//"echo Y & ;echo -e -n '\\x04'\n")
 });
 }
 
@@ -290,7 +285,7 @@ module.exports.handler = function(
 			rtpath: rtpath,
 			handler: handlerName,
 			altered: {
-				name: "utrun", /* XXX this should be variable */
+				name: rt.altered,
 				package: undefined
 			},
 			ev: ev,
@@ -533,4 +528,3 @@ var sock;// = socket;
 		sendInvoke();
 	}
 }
-

@@ -299,8 +299,8 @@ if __name__ == "__main__":
 		return path, os.path.splitext(name)[0]
 
 	def _notify(action):
-		if callback is not None and hasattr(callback,action):
-			f = getattr(callback,action)
+		if callback is not None:
+			f = getattr(callback,action,None)
 			if callable(f):
 				f()
 

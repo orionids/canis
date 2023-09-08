@@ -1,4 +1,4 @@
-// vim: ts=4 sw=4 noet :
+// vim:ts=4 sw=4:
 // jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
@@ -11,11 +11,12 @@ var string = require("canis/string");
 var object = require("canis/object");
 var invoke = require("canis/invoke");
 var log = require("canis/log");
+var mime = require("canis/mime");
 
-process.on( 'uncaughtException', function (err,origin) {
+process.on('uncaughtException', function (err,origin) {
 	console.log(err);
 	console.log(origin);
-} );
+});
 
 exports.stage = function (config, url, ctx)
 {
@@ -94,32 +95,20 @@ resource(m, method, stage, url, baseLength,
 	response, config, param)
 {
 	function result(fn, data, r) {
-		var type = "text/html";
+		var text;
+		var type;
 		var index = fn.lastIndexOf(".");
 		if (index > 0) {
-			switch( fn.substring
-				(index + 1).toLowerCase() ) {
-				case "jpg" : case "jpeg":
-				type = "image/jpeg";
-				break;
-				case "png" :
-				type = "image/png";
-				break;
-				case "gif" :
-				type = "image/gif";
-				break;
-				case "css" :
-				type = "text/css";
-				break;
-				case "js":
-				type = "application/js";
-				break;
-				case "json":
-				type = "application/json";
-				break;
-				case "woff":
-				type = "application/x-font-woff";
+			type = mime.extension[fn.substring(
+				index + 1).toLowerCase()];
+			if (typeof type === "object") {
+				text = type.text;
+				type = type.type;
 			}
+		}
+		if (type === undefined) {
+			text = true;
+			type = "text/html";
 		}
 		var header = {
 			'Content-Type' : type
@@ -161,7 +150,7 @@ resource(m, method, stage, url, baseLength,
 		absence(response, method, config);
 	}
 
-	var p = baseLength ? url.substring(baseLength) : url;
+	var p = decodeURI(baseLength ? url.substring(baseLength) : url);
 	var filePath = m.path + (
 		stage? "/" + stage + "/" + p : p);
 	var base = m.base;
@@ -176,30 +165,39 @@ resource(m, method, stage, url, baseLength,
 		console.log("ignored :" + filePath);
 		notFound();
 	} else {
-		console.log(log.position(), "STAGE=", stage, filePath);
+//		console.log(log.position(), "STAGE=", stage, filePath);
 		fs.readFile( filePath, function(err,data) {
 			if (err) {
-//				do {
-				if (err.code == "EISDIR") {
+				if (err.code == "EISDIR" || (
+				    err.code == "EINVAL" && fs.lstatSync(
+						filePath).isDirectory())) {
 					var di = config.directoryIndex;
 					if (di) {
-						if (!Array.isArray(di))
-							di = ["index.html", "index.htm"];
-						var i = 0;
-						(function iter() {
-							if (i < di.length) {
-								index(di[i++],iter);
-							} else {
-								notFound();
-							}
-						})();
+						if (typeof di === "function" ) {
+//							di(filePath);
+							result(filePath,
+"<a href=https://google.com>GOOGLE</a>");
+						} else {
+							if (!Array.isArray(di))
+								di = [
+									"index.html",
+									"index.htm"
+								];
+							var i = 0;
+							(function iter() {
+								if (i < di.length)
+									index(di[i++],iter);
+								else
+									notFound();
+							})();
+						}
 					} else {
 						index(di, notFound);
 					}
 				} else {
+console.log(err.code);
 					notFound();
 				}
-//				} while (0);
 			} else {
 				result(filePath, data);
 			}
@@ -280,8 +278,8 @@ context, api, basepath, request, response, param)//, matched)
 		var base;
 		if (all) {
 			ctx.i = -1;
-			last--;
-			s = url;
+//			last--;
+			s = apipath;
 			base = ctx.prev;
 		} else {
 			s = ctx.part;
@@ -379,7 +377,7 @@ context, api, basepath, request, response, param)//, matched)
 					if (prop.charAt(1) == '{' &&
 						prop.charAt(last) == '}') {
 						var all = prop.charAt(last - 1) == '+';
-						var name = prop.substring(2, last);
+						var name = prop.substring(2, all? last - 1 : last);
 						addPathParameter(name, all);
 						// add alias to avoid loop next time
 						a = api[prop];
