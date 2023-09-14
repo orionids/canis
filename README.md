@@ -63,7 +63,7 @@ So Canis is a part of Orion project and will support :
 ## Known todo list
 - Static files
 - Done(0.3.2) : An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
-- Conditional storage operation compatible to AWS DynamoDB
+- Done: Conditional storage operation compatible to AWS DynamoDB
 - User account support using popular frameworks
 - Interoperability with Orion project
 
