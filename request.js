@@ -71,7 +71,7 @@ exports.override = function(target, source) {
 };
 
 function
-invokeLambda(api,symbol,request,response,local)
+invokeLambda(api, symbol, request, response, local)
 {
 	var invoke = require("canis/invoke");
 
@@ -148,10 +148,10 @@ exports.local = function
 	var symbol;
 	if (param) symbol = param.symbol;
 	cloneTC(request, symbol, function (r, name) {
-		if(r) {
+		if (r) {
 			if (r.method == "INVOKE") {
 				context.fork = param.fork;
-				invokeLambda(api,symbol,r,response, true);
+				invokeLambda(api, symbol, r, response, true);
 			} else {
 				r.on = function(n,f) {
 					switch (n) {
@@ -508,7 +508,7 @@ exports.resolve = function
 				case "LAMBDA_HANDLER":
 				return "lambda_handler"; // XXX
 				case "LAMBDA_RUNTIME":
-				return "python3.9"; // XXX
+				return "python3.11"; // XXX
 			}
 			name = string.symbol(name, param.symbol, true);
 //				if (val !== undefined) { // there is conditional value
@@ -574,6 +574,7 @@ exports.iterate = function( context, target, symbol,
 	callback, api, basepath, request, response, param )
 {
 	var i;
+	var elapsed;
 	var r = {
 		writeHead: response.writeHead,
 		write : response.write,
@@ -584,9 +585,11 @@ exports.iterate = function( context, target, symbol,
 	};
 
 	function perform() {
-		callback(i, symbol.length);
+		callback(i, symbol.length, elapsed === undefined?
+			undefined : Date.now() - elapsed);
 		if (i < symbol.length) {
 			e.symbol[0] = symbol[i++];
+			elapsed = Date.now();
 			callee[target]( context, api, basepath,
 				request, r, e );
 		} else {

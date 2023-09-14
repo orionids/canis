@@ -8,7 +8,7 @@ import json
 import decimal
 
 _stdout = sys.stdout
-sys.stdout = sys.stderr
+#sys.stdout = sys.stderr
 stdin_buf = sys.stdin.buffer;
 _client = None
 

@@ -118,7 +118,18 @@ exports.resolve = function(s, symbol, ctx) {
 			}
 		}
 	}
-	return s;
+
+	//XXX
+	var from = 0;
+	var news = '';
+	while ((i = s.indexOf("\\u", i)) >= 0) {
+		var prev = s.substring(from, i);
+		from = i + 6;
+		news += prev + String.fromCharCode(
+		parseInt(s.substring(i + 2, from), 16)	) 
+		i = from;
+	}
+	return from <= 0 ? s : news + s.substring(from);
 };
 
 exports.resolveCache = function(cache, name, symbol)
