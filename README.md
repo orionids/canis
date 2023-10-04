@@ -45,10 +45,11 @@ So Canis is a part of Orion project and will support :
 		- S3 support
 	- object.js, string.js : some utility functions related to objects & strings
 
-## New features in 0.4.4 to 0.5.7
+## New features in 0.4.4 to 0.6.0
 
 - AWS related
 	- Sending HTML E-mail via SES
+	- runtime temporary credential update
 - Code execution
 	- Multi process support
 	- Python support
@@ -61,7 +62,7 @@ So Canis is a part of Orion project and will support :
 - Object traversal callback
 
 ## Known todo list
-- Static files
+- Done: Static files
 - Done(0.3.2) : An implementation like AWS lambda proxy integration ( AWS API auto generation already supports this option )
 - Conditional storage operation compatible to AWS DynamoDB
 - User account support using popular frameworks

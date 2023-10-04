@@ -4,7 +4,10 @@
 // Distributed under ISC License
 
 "use strict";
-var string = require( "canis/string" )
+var fs = require("fs");
+var context = require("canis/context");
+var string = require("canis/string");
+var otp = require("canis/otp");
 
 function recoverConfig(aws) {
 	if ( aws ) {
@@ -23,13 +26,70 @@ var param;
 
 exports.recover = recoverConfig;
 exports.initialize = function(aws) {
-	if ( !aws ) {
+	if (!aws) {
 		var awssdk = process.env.AWS_SDK;
 		try {
 			aws = require(  awssdk === undefined ?
 				'aws-sdk' : awssdk );
 		} catch (e) {
 		}
+
+		var oldcred = aws.config.credentials;
+		class cred extends aws.Credentials {
+			constructor() {
+				super();
+				var c = process.env.AWS_TEMPORARY_CREDENTIAL.split(",");
+				this.serialNumber = "arn:aws:iam::" + string.resolve(c[0]) + ":mfa/" + string.resolve(c[1]);
+				this.mfaKey = string.resolve(c[2]);
+				var duration = parseInt(string.resolve(c[3]));
+				this.duration = duration < 900 ? 900 : duration > 129600 ? 129600 : duration;
+				this.path = string.resolve(c[4]);
+				try {
+					c = JSON.parse(fs.readFileSync(this.path));
+					this.expireTime = new Date(c.expireTime);
+					this.accessKeyId = c.accessKeyId;
+					this.secretAccessKey = c.secretAccessKey;
+					this.sessionToken = c.sessionToken;
+				} catch (e) {
+				}
+			}
+
+			refresh(callback) {
+				var p = otp.google(this.mfaKey);
+				var param = {
+					DurationSeconds: this.duration, 
+					SerialNumber: this.serialNumber,
+					TokenCode: p.code
+				};
+				var newcred = this;
+				aws.config.credentials = oldcred;
+				process.nextTick(function() {
+					context.service("STS").getSessionToken(
+						param, function(err, data) {
+							if (err) {
+								console.log(err);
+							} else {
+								var c = data.Credentials;
+								aws.config.credentials = newcred;
+								newcred.expired = false;
+								newcred.expireTime = c.Expiration;
+								newcred.accessKeyId = c.AccessKeyId;
+								newcred.secretAccessKey = c.SecretAccessKey;
+								newcred.sessionToken = c.SessionToken;
+								fs.writeFileSync(newcred.path, JSON.stringify({
+									expireTime: newcred.expireTime,
+									accessKeyId: newcred.accessKeyId,
+									secretAccessKey: newcred.secretAccessKey,
+									sessionToken: newcred.sessionToken
+								}, null, 3));
+							}
+							callback();
+						});
+				});
+			}
+		};
+		aws.config.credentials = new cred();
+
 	}
 	recoverConfig(aws);
 	return aws;

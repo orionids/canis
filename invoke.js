@@ -130,10 +130,10 @@ rtctx.aws_request_id = 'reqid'
 		}
 	}
 
-	if (!(flag & module.exports.DISABLE_REMOTE)) {
+	if (true || !(flag & module.exports.DISABLE_REMOTE)) {
 		// try AWS lambda
 		prefix = context.lambdaPrefix;
-		context.lambda().invoke( {
+		context.service("Lambda").invoke( {
 			FunctionName: prefix ? prefix + name : name,
 			InvocationType: 'RequestResponse',
 			LogType: 'Tail',
@@ -432,6 +432,24 @@ if (commLog) console.log(">>>>> Exact payload received");
 						action: "command",
 						body: "HELLO!!!"
 					});
+					break;
+					case "credential":
+					var aws = require("canis/context").aws();
+					var cred = aws.config.credentials;
+					function sendCredential() {
+						child.send({
+							"action": "credential",
+							"body": [
+								cred.accessKeyId,
+								cred.secretAccessKey,
+								cred.sessionToken,
+								cred.expireTime]
+						});
+					}
+					if (cred.needsRefresh())
+						cred.refresh(sendCredential);
+					else
+						sendCredential();
 				}
 			};
 			function socket(done) {

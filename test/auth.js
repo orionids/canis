@@ -1,2 +1,4 @@
-require("canis/aws/auth").session(
-    id, account, otp, 3600)
+var otp = require("canis/otp");
+
+var context = require("canis/context");
+context.service("STS")

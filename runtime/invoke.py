@@ -10,8 +10,34 @@ import json
 import threading
 import builtins
 from canis.runtime import io
+
 _pydevd = None
 _event = []
+
+if "AWS_TEMPORARY_CREDENTIAL" in os.environ:
+	def get_credential():
+		io.send({
+			"action": "credential"
+		})
+		return dict(zip(["access_key", "secret_key", "token", "expiry_time"], io.recv()["body"]))
+
+	from botocore.credentials import RefreshableCredentials
+	from botocore import session
+	class TemporaryCredentialSession(session.Session):
+		def __init__(self, *args, **kwargs):
+			super().__init__(*args, **kwargs)
+			self._credentials = RefreshableCredentials.create_from_metadata(
+				metadata={
+					"access_key": "",
+					"secret_key": "",
+					"token": "",
+					"expiry_time": "1970-01-01 00:00:00Z"
+				},
+				refresh_using=get_credential,
+				method=''
+			)
+	session.Session = TemporaryCredentialSession
+
 
 def _cygtodos(path):
 	return path[10] + ':' + path[11:] if path.startswith(
@@ -91,6 +117,7 @@ if __name__ == "__main__":
 	builtins.print = log(print)
 
 	old = sys.stderr
+	old.flush()
 	if sys.platform == "win32":
 		from ctypes import windll, Structure, wintypes, byref
 		stderr_handle = windll.kernel32.GetStdHandle(-12)
@@ -176,6 +203,7 @@ if __name__ == "__main__":
 			self.lock.release();
 
 	sys.stderr = StdErr()
+
 	port = os.environ.get("PYDEV_PORT")
 	if port is not None:
 		_pydevd = __import__("pydevd")
@@ -330,6 +358,7 @@ if __name__ == "__main__":
 			i += 1
 		sys.argv = sys.argv[i:]
 		io.connect(addr)
+
 	_initialize()
 
 	_notify("before_loop")
