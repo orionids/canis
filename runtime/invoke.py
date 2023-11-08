@@ -38,6 +38,7 @@ def resolve(body):
 	return io.recv()["body"]
 
 def initialize(cmd):
+	sys.stderr.new_line = None if cmd.get("remark") is False else True
 	path = cmd.get("rtpath")
 	if path:
 		def _cvt(name):
@@ -171,7 +172,7 @@ if __name__ == "__main__":
 				old.write( _color("magenta") + str(os.getpid()) + _color("reset") + " " )
 				self.new_line = False
 			old.write( s )
-			if last == '\n':
+			if last == '\n' and self.new_line is not None:
 				self.new_line = True
 			self.lock.release();
 
@@ -201,8 +202,7 @@ if __name__ == "__main__":
 					if relpath not in sys.path:
 						sys.path.append(relpath)
 					path = path[i:]
-				l = import_module(
-					"." + name, path.replace("/", "."))
+				l = import_module("." + name, path.replace("/", "."))
 			else:
 				sys.path.append(os.getcwd())
 				l = import_module(name)
@@ -227,8 +227,7 @@ if __name__ == "__main__":
 			ctx = _Context()
 			ctx.__dict__ = cmd["ctx"]
 			handler = cmd.get("handler")
-			handler = getattr(
-				l,handler if handler else "lambda_handler", None)
+			handler = getattr(l, handler if handler else "lambda_handler", None)
 			if handler:
 				try:
 					r = handler(cmd.get("ev", {}), ctx)

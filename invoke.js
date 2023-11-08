@@ -58,10 +58,14 @@ module.exports = function(
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
 		module.exports.handler(
-			context, prefix.runtime, prefix.lambda,
-			server.invocationPath(
-				process.cwd(), string.path(prefix.basePath)),
-			prefix.handler, param, rtctx, callback)
+			context, prefix.runtime, rtctx, {
+				src: prefix.lambda,
+				path: server.invocationPath(
+					process.cwd(), string.path(prefix.basePath)),
+				handler: prefix.handler,
+				param: param,
+				remark: flag & module.exports.NO_REMARK? false : true,
+			}, callback);
 		return;
 		try {
 			param.method = "POST";
@@ -257,16 +261,19 @@ module.exports.gc = function()
 
 module.exports.DISABLE_LOCAL = 0x1;
 module.exports.DISABLE_REMOTE = 0x2;
+module.exports.NO_REMARK = 0x4
 module.exports.handler = function(
-	context, rtname, src, path, handlerName, ev, rtctx, callback)
+	context, rtname, rtctx, callee, callback)
 {
 	var rt;
 	var rtpath;
 	var idle;
 	var child;
+
 	function registerOnClose() {
 		idle = {child: child};
-		child.on("close", function() {
+		child.on("close", function(code) {
+			process.exitCode = code;
 			list.unlinkCircularNode(idle);
 			if (rt.active.next == rt.active && gcRequested)
 				module.exports.gc();
@@ -289,7 +296,8 @@ module.exports.handler = function(
 				package: undefined
 			},
 			ev: ev,
-			ctx: rtctx
+			ctx: rtctx,
+			remark: callee.remark
 		});
 	}
 
@@ -357,9 +365,13 @@ if (commLog) console.log(">>>>> Exact payload received");
 
 	var fork = context.get("fork");
 
+	var path = callee.path;
 	if (path && path.startsWith("/cygdrive/"))
 		path = path.charAt(10) + ':' + path.substring(11);
 
+	var src = callee.src;
+	var handlerName = callee.handler;
+	var ev = callee.param;
 	if (fork === undefined) {
 		try {
 			require(path? path + "/" + src : src)[
@@ -432,6 +444,24 @@ if (commLog) console.log(">>>>> Exact payload received");
 						action: "command",
 						body: "HELLO!!!"
 					});
+					break;
+					case "credential":
+					var aws = require("canis/context").aws();
+					var cred = aws.config.credentials;
+					function sendCredential() {
+						child.send({
+							"action": "credential",
+							"body": [
+								cred.accessKeyId,
+								cred.secretAccessKey,
+								cred.sessionToken,
+								cred.expireTime]
+						});
+					}
+					if (msg.refresh && cred.needsRefresh())
+						cred.refresh(sendCredential);
+					else
+						sendCredential();
 				}
 			};
 			function socket(done) {

@@ -244,12 +244,11 @@ options(api, hdr, response, param)
 }
 
 exports.queryParameter = function(apipath) {
-	var param;
+	var param = {};
 	/* don't use lastIndexOf to guarantee api path doesn't
 	 contain '?' */
 	var index = apipath.indexOf('?');
 	if (index > 0) {
-		param = {}; // AWS supplies null object if query string param is absent
 		// XXX duplicated in ueParameter
 		var p = apipath.substring(index + 1).split('&');
 		for (var i = 0; i < p.length; i++) {
@@ -509,11 +508,12 @@ rtctx.symbol = param.symbol;
 				// request.lambda is not a regular attr
 				// so no security issue to
 				// externally submit lambda path
-				invoke.handler(context, rtname,
-					request.lambda? request.lambda : lambda,
-					exports.invocationPath(
-						basepath, configPath), m.handler,
-					ev, rtctx, function(xxx,result) {
+				invoke.handler(context, rtname, rtctx, {
+					src: request.lambda? request.lambda : lambda,
+					path: exports.invocationPath(basepath, configPath),
+					handler: m.handler,
+					param: ev
+				}, function(xxx,result) {
 					var type;
 					var stat;
 					var hdr;
