@@ -10,7 +10,7 @@ import decimal
 _stdout = sys.stdout
 #sys.stdout = sys.stderr
 stdin_buf = sys.stdin.buffer;
-_client = None
+_client = _stdout
 
 class encdec(json.JSONEncoder):
 	def default(self, o):
@@ -110,4 +110,22 @@ def connect(addr):
 			else os.getpid)()
 	})
 
+if tmpcred := os.environ.get("AWS_TEMPORARY_CREDENTIAL"):
+	def get_credential(refresh=True):
+		send({
+			"action": "credential",
+			"refresh": refresh
+		})
+		return dict(zip(["access_key", "secret_key", "token", "expiry_time"], recv()["body"]))
 
+	from botocore.credentials import RefreshableCredentials
+	from botocore import session
+	class TemporaryCredentialSession(session.Session):
+		def __init__(self, *args, **kwargs):
+			super().__init__(*args, **kwargs)
+			self._credentials = RefreshableCredentials.create_from_metadata(
+				metadata=get_credential(False),
+				refresh_using=get_credential,
+				method=''
+			)
+	session.Session = TemporaryCredentialSession

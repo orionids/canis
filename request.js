@@ -85,7 +85,7 @@ invokeLambda(api, symbol, request, response, local)
 	}
 
 	invoke(context, request.api, request.payload,
-		local? invoke.DISABLE_REMOTE : invoke.DISABLE_LOCAL,
+		local? response.remark === false? invoke.DISABLE_REMOTE | invoke.NO_REMARK : invoke.DISABLE_REMOTE : invoke.DISABLE_LOCAL,
 		function(err,data) {
 			response.writeHead(err?err.statusCode:200,{});
 			response.write(data?typeof(data)=="string"?
@@ -581,7 +581,8 @@ exports.iterate = function( context, target, symbol,
 		end : function () {
 			response.end();
 			perform();
-		}
+		},
+		remark: response.remark
 	};
 
 	function perform() {
@@ -652,6 +653,7 @@ exports.load = function(
 			handler = lambdaInfo.handlerName;
 			type = lambdaInfo.type;
 			feature = lambdaInfo.feature;
+			basePathConf = lambdaInfo.basePath;
 		} else {
 			serverPath = lambdaInfo;
 			handler = undefined;
@@ -680,8 +682,7 @@ exports.load = function(
 		if (basepath == null) basepath = ".";
 		var index = filePath.lastIndexOf("/");
 		var name = feature + (index >= 0 ? filePath.substring(index + 1 ) : filePath);
-		var src = path.normalize(string.path(basepath)) +
-			path.sep + filePath + ".py";
+		var src = path.normalize(string.path(basepath)) + path.sep + filePath + ".py";
 		var cwd = process.cwd();
 		src = (process.platform === "win32"?
 			src.toLowerCase().indexOf(cwd.toLowerCase()) :
@@ -689,8 +690,8 @@ exports.load = function(
 			src.substring(cwd.length + 1) : src;
 		server.registerLambda( context, {
 			[name] : {
-				lambda : process.platform === "win32"?
-					src.replace(/\\/g,"/") : src,
+				lambda : path.normalize(process.platform === "win32"?
+					src.replace(/\\/g,"/") : src),
 				handler: handler
 			}
 		}, basePathConf );

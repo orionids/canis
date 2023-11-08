@@ -13,11 +13,11 @@ var storage = require("canis/storage");
 var child_process = require("child_process");
 var aws;
 
-function awsContext()
+function awsContext(name, param)
 {
 	if (aws === undefined)
 		aws = require("canis/awssdk").initialize();
-	return aws;
+	return name? new aws[name](param) : aws;
 }
 
 function
@@ -47,14 +47,12 @@ module.exports = function()
 
 module.exports._entity = defaultEntity;
 
-module.exports.aws = function() {
-	return awsContext();
-};
+module.exports.aws = awsContext;
 
 module.exports.ddbcli = function() {
 	var ddbcli = this._entity._ddbcli;
 	if (!ddbcli) {
-		ddbcli = new awsContext().DynamoDB.DocumentClient();
+		ddbcli = awsContext("DynamoDB").DocumentClient();
 		this._entity._ddbcli = ddbcli;
 	}
 	return ddbcli;
@@ -73,7 +71,7 @@ module.exports.service = function(name,param)
 {
 	var service = this._entity[name];
 	if (!service) {
-		service = new awsContext()[name](param);
+		service = awsContext(name, param);
 		this._entity[name] = service;
 	}
 	return service;

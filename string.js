@@ -1,4 +1,4 @@
-// vim: ts=4 sw=4 noet :
+
 // jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
@@ -45,7 +45,7 @@ exports.symbol = function (s, symbol, explicit)
 		}
 		return undefined;
 	}
-	if (symbol) return onDemandSymbol( symbol, s);
+	if (symbol) return onDemandSymbol(symbol, s);
 	return process.env[s];
 };
 
