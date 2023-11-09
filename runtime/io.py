@@ -8,7 +8,6 @@ import json
 import decimal
 
 _stdout = sys.stdout
-#sys.stdout = sys.stderr
 stdin_buf = sys.stdin.buffer;
 _client = _stdout
 
@@ -128,4 +127,7 @@ if tmpcred := os.environ.get("AWS_TEMPORARY_CREDENTIAL"):
 				refresh_using=get_credential,
 				method=''
 			)
+		def set_credentials(self, access_key, secret_key, token=None):
+			# just ignore this, we have refreshable credential
+			pass
 	session.Session = TemporaryCredentialSession

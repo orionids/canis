@@ -117,10 +117,9 @@ exports.https = function(
 					(apiInfo.base? apiInfo.base : basepath) + apipath : apipath;
 				httpreq(https, r, function( err, data, res) {
 					if (err) {
-						response.writeHead(err.statusCode);
+						response.writeHead(err.statusCode, res.headers);
 						response.write(err.message);
 						response.end(err.message);
-						//console.log(err);
 					} else {
 						response.writeHead(res.statusCode, res.headers);
 						response.write(data);
