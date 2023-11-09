@@ -26,9 +26,7 @@ exports.writeHead = function (s,h) {
 		}
 
 		request.evaluate(context.testCase, s);
-		console.log( "----- RESPONSE(status " + s + ")-----",
-			h? syntax.highlight(JSON.stringify(h,null,3)) :
-			"No header" );
+		console.log( "----- RESPONSE(status " + s + ")-----", h);
 	}
 }
 

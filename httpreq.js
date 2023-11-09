@@ -13,8 +13,7 @@ module.exports = function(mod, o, f) {
             } );
             res.on("end", function() {
                 r = Buffer.concat(r);
-                if (res.headers["content-type"].startsWith(
-                    "text/"))
+                if (res.headers["content-type"].startsWith("text/"))
                     r = r.toString();
                 if (res.statusCode != 200) {
                     f ( {

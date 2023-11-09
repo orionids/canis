@@ -54,8 +54,7 @@ def initialize(cmd):
 			lst = src.get("fromlist")
 			_tried = {}
 			try:
-				imp = __import__(
-					src["name"], fromlist=lst)
+				imp = __import__(src["name"], fromlist=lst)
 			except ModuleNotFoundError as e:
 				print(e)
 #					for evt in _event:
