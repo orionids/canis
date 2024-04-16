@@ -25,6 +25,12 @@ var s = server.main ( context, [
 	},
 	parse: // supply this for interactive mode
 	function(input,quit){
+if (input == "") {
+	quit(true);
+console.log("XX");
+	quit(false);
+	return;
+}
 		try {
 			eval(input);
 		} catch ( e ) {

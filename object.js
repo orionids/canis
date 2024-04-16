@@ -25,14 +25,15 @@ exports.load = function(file, param) {
 
 
 
-exports.attribute = function(o, a)
+exports.attribute = function(o, a, tag, sep)
 {
-	if (typeof a === "string") a = a.split(".");
+	if (!sep) sep = ".";
+	if (typeof a === "string") a = a.split(sep);
 	var pref = "";
 	retry:
 	for (var i = 0; i < a.length; i++) {
 		if (o === undefined) break;
-		pref += a[i];
+		pref += tag? tag + a[i] : a[i];
 		var list = pref.split("[");
 		for (var l = 0; l < list.length; l++) {
 			var item = list[l];
@@ -48,7 +49,7 @@ exports.attribute = function(o, a)
 				// some mixed cased with . and [ can cause
 				// potential conflicts ignored in the impl.
 				if (i + 1 < a.length) {
-					pref += ".";
+					pref += sep;
 					continue retry;
 				}
 				throw TypeError("NO_ATTRIBUTE");

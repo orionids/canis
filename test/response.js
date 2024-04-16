@@ -68,8 +68,11 @@ exports.write = function (result) {
 		switch (resstr.charAt(resstr.search(/\S|$/))) {
 			case '{':
 			case '[':
-			r = JSON.parse(resstr);
-			break;
+			try {
+				r = JSON.parse(resstr);
+				break;
+			} catch(e) {
+			}
 			default:
 			r = result;
 		}
@@ -98,7 +101,6 @@ exports.write = function (result) {
 					"\x1b[92mPass\x1b[0m" : "\x1b[91mFail\x1b[0m");
 		} else {
 			console.log("Error in response")
-			postproc = undefined;
 		}
 	} else {
 		r = {};

@@ -2,10 +2,10 @@
 
 var fs = require("fs");
 var syntax = require("canis/context").module(
-	"ge/web/syntax", "@orionids/Orion");
+	"ge/glue/syntax", "@orionids/Orion");
 
 // XXX In Windows!
-var off = fs.statSync("/dev/stdout").isFile();
+var off = fs.statSync("/dev/stderr").isFile();
 
 exports.html = syntax.html;
 

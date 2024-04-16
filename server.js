@@ -5,6 +5,7 @@
 
 "use strict";
 var fs = require("fs");
+var ws = require("ws");
 var path = require("path");
 var tls = require("tls");
 var string = require("canis/string");
@@ -91,8 +92,7 @@ function absence(response, method, config) {
 }
 
 function
-resource(m, method, stage, url, baseLength,
-	response, config, param)
+resource(context, m, method, stage, url, baseLength, response, config, param)
 {
 	function result(fn, data, r) {
 		var text;
@@ -166,11 +166,10 @@ resource(m, method, stage, url, baseLength,
 		notFound();
 	} else {
 //		console.log(log.position(), "STAGE=", stage, filePath);
-		fs.readFile( filePath, function(err,data) {
+		fs.readFile(filePath, function(err,data) {
 			if (err) {
-				if (err.code == "EISDIR" || (
-				    err.code == "EINVAL" && fs.lstatSync(
-						filePath).isDirectory())) {
+				if (err.code == "EISDIR" || (err.code == "EINVAL" &&
+					fs.lstatSync(filePath).isDirectory())) {
 					var di = config.directoryIndex;
 					if (di) {
 						if (typeof di === "function" ) {
@@ -195,8 +194,16 @@ resource(m, method, stage, url, baseLength,
 						index(di, notFound);
 					}
 				} else {
-console.log(err.code);
-					notFound();
+					if (m.runtime) {
+						// XXX do async
+						context.module("ge/glue/ue.js", "@orionids/Orion", true);
+						fs.readFile(filePath, function(err,data) {
+							if (err) notFound();
+							else result(filePath, data);
+						});
+					} else {
+						notFound();
+					}
 				}
 			} else {
 				result(filePath, data);
@@ -326,7 +333,7 @@ context, api, basepath, request, response, param)//, matched)
 			}
 		}
 		if (api === undefined) {
-			if (name == "favicon.ico") {
+			if (name === "/favicon.ico" || name === "favicon.ico") {
 				absence(response, request.method, null);
 				return;
 			}
@@ -404,7 +411,18 @@ context, api, basepath, request, response, param)//, matched)
 	var m;
 	if (a !== undefined) {
 		m = a[request.method];
-		if (m !== undefined) {
+		if (m !== undefined) for (;;) {
+			var root;
+			if (m.domain) {
+				var c = config.server.endpoint[m.domain]
+				if (!c || !(c = c[m.protocol + "." + m.port]) ||
+					!(c = config.server.api[c])) break;
+				m = object.attribute(
+					c, m.path.substring(1), "/", "/")[request.method];
+				if (!m) break;
+ 				root = config.basePath;
+				config = c.configuration;
+			}
 			if (m.apiKeyRequired == true ||
 			  (m.apiKeyRequired != false && config.apiKeyRequired == true)) {
 				if (ctx.apiKey !== undefined) {
@@ -482,7 +500,8 @@ ev.queries = queryParam;
 				}
 				var rtctx = {
 					functionName: fn,
-					lambdaPrefix: string.resolveCache(config, "lambdaPrefix")
+					lambdaPrefix: string.resolveCache(config, "lambdaPrefix"),
+					root: root? exports.invocationPath(basepath, root) : null,
 				};
 				Object.assign(rtctx, param.context);
 
@@ -503,8 +522,7 @@ rtctx.symbol = param.symbol;
 					}
 				}
 				var configPath = m.basePath;
-				if (configPath === undefined)
-					configPath = config.basePath;
+				if (configPath === undefined) configPath = config.basePath;
 				// request.lambda is not a regular attr
 				// so no security issue to
 				// externally submit lambda path
@@ -517,14 +535,17 @@ rtctx.symbol = param.symbol;
 					var type;
 					var stat;
 					var hdr;
+if (xxx) result = xxx;
 					if (lpi) {
-						stat = result.statusCode;
 						hdr = result.headers;
 						result = result.body;
 						// XXX case when result has headers
 					} else {
-						stat = 200;
+                        //XXX if statusCode should be 200 here,
+                        // consider running command as lambda, causing an exception
 					}
+					stat = result.statusCode;
+//if (stat === undefined) stat = 200;
 //https://github.com/feross/is-buffer/blob/master/index.js
 					if (typeof result === 'object') {
 						result = JSON.stringify(result);
@@ -533,8 +554,9 @@ rtctx.symbol = param.symbol;
 						(type = m.header["Content-Type"]) === undefined) {
 						type = "text/plain";
 					}
-if (xxx) { // XXX more test is needed for exception case
-console.log(xxx);
+if (false && xxx) { // XXX more test is needed for exception case
+//console.log(xxx,"!!!!!!!!!!!!!", stat);
+//process.exit(1)
 	response.end();
 } else {
 					response.writeHead(stat,
@@ -555,9 +577,9 @@ console.log(xxx);
 		} else {
 			if (request.method === "OPTIONS")
 				return options(a, request.headers, response, param);
-			throw new Error(
-				"UNKNOWN_METHOD." + request.method);
 		}
+		throw new Error(
+			"UNKNOWN_METHOD." + request.method);
 	} else {
 		a = api[""];
 		m = request.method;
@@ -577,7 +599,7 @@ console.log(xxx);
 				}
 			}
 			if (m.path) {
-				resource(m, request.method, stage, apipath,
+				resource(context, m, request.method, stage, apipath,
 					baseLength, response, config, param);
 				return;
 			}
@@ -607,8 +629,11 @@ exports.registerLambda = function(context, apiLambdaTable, basePath)
 exports.loadAPI = function(context, name, cwd)
 {
 	try {
-		var api = object.load( path.isAbsolute(name) || !cwd?
-			name : cwd + "/" + name );
+		var api = object.clone(
+					typeof(name) === "string" ?
+						object.load(
+							path.isAbsolute(name) || !cwd?
+							name : cwd + "/" + name) : name, process.env);
 		var apiLambdaTable = api["^"];
 		var basePath;
 		var config = api.configuration;
@@ -680,24 +705,37 @@ exports.run = function(context,apiset,basepath,param) {
 					break;
 				}
 			}
+
 			const http = require("http");
-			server = http.createServer
-				(dispatch ).listen(port? port : 80);
+			server = http.createServer(dispatch).listen(port? port : 80);
 		} while (0);
 
+//var w = ws.WebSocketServer;
+//var wss = new w({server});
+var wss = new ws.Server({server});
+wss.on("connection", function(socket) {
+	console.log("WEBSOCKET!");
+	socket.on("message", function(data) {
+		console.log(data.toString());
+	});
+	socket.on("close", function() {
+		console.log("CLOSED");
+	});
+	socket.send("HELLO!!!");
+});
 
 		if (client) {
 			server.client = {};
-			server.on( "connection", function(socket) {
+			server.on("connection", function(socket) {
 console.log("New client", socket.remoteAddress);
-				string.unique(function( id) {
+				string.unique(function(id) {
 					socket.id = id;
 					server.client[id] = socket;
-					socket.on( "close", function() {
+					socket.on("close", function() {
 						delete server.client[id];
 					});
-				} );
-			} );
+				});
+			});
 
 		}
 
@@ -725,9 +763,9 @@ exports.close = function(server) {
 //   module : external module
 //   context : 2nd param of handler
 
-exports.main = function(context,apidef,param)
+exports.main = function(context, apidef, param)
 {
-	var rl;
+//	var rl;
 
 	function clearChildren(head, callback, kill) {
 		function clearChild(l) {
@@ -747,7 +785,7 @@ console.log("send exit");
 	}
 
 	function finalize() {
-		if (rl) rl.close();
+//		if (rl) rl.close();
 		invoke.gc();
 		var fin = param.finalize;
 		if (fin) fin();
@@ -802,35 +840,7 @@ console.log("send exit");
 		run = param;
 	} else if (param) {
 		run = param.run;
-		if (param.parse) {
-			var readline = require("readline");
-			rl = readline.createInterface({
-				input: process.stdin,
-				output: process.stdout
-			});
-            rl.on("SIGINT", function() {
-				param.parse(null, terminate);
-            });
-			(function interactive() {
-				var p = param.prompt;
-				rl.question(p? p : "> ", function (input) {
-					var state;
-					try {
-						param.parse(input,function(pause) {
-							if (pause === false)
-								interactive();
-							else if (!pause)
-								terminate();
-							state = true;
-						});
-					} catch (e) {
-						console.log(e);
-					}
-					if (state === undefined)
-						interactive();
-				});
-			})();
-		}
+		if (param.parse) require("canis/monitor")(param, terminate);
 	}
 	if (!run) run = exports.run;
 
@@ -872,6 +882,5 @@ console.log("send exit");
 	return false;
 };
 
-if ( exports.main(
-		require("canis/context"), "restapi" ) === undefined )
+if (exports.main(require("canis/context"), "restapi") === undefined)
 	console.log("No body in restapi.js");

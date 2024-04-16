@@ -6,10 +6,16 @@ import sys
 import os
 import json
 import decimal
+import socket # not always needed
 
-_stdout = sys.stdout
-stdin_buf = sys.stdin.buffer;
-_client = _stdout
+process_root = None
+_process_client = sys.stdout
+_process_host = ("127.0.0.1", 31000)
+_lambda_client = None
+_pid_packet = {
+	"action": "pid",
+	"pid": (os.getppid if sys.platform == "win32" else os.getpid)()
+}
 
 class encdec(json.JSONEncoder):
 	def default(self, o):
@@ -37,77 +43,77 @@ def _deserialize(read):
 		int.from_bytes(fullread(4), byteorder='big')))
 	
 
-def send_stdio(e):
+def send_socket(client, addr, e):
 	l, p = _serialize(e)
-	_stdout.buffer.write(l)
-	_stdout.buffer.write(p)
+	while True:
+		try:
+			client.sendall(l + p)
+		except OSError as e:
+			if e.errno == 57:
+				client.connect(addr)
+				send_socket(client, addr, _pid_packet)
+				continue
+		break
 
-#	i = 0
-#	total = len(p)
-#	while True:
-#		j = i + 8192
-#		if total <= j:
-#			print("\033[96m", i, "\033[0m")
-#			_stdout.buffer.write(p[i:])
-#			break
-#		print("\033[96m", i, j, "\033[0m")
-#		_stdout.buffer.write(p[i:j])
-#		i = j
+def recv_socket(client, addr):
+	while True:
+		try:
+			r = _deserialize(client.recv)
+			return r;
+		except OSError as e:
+			if e.errno != 57:
+				return None
+			client.connect(addr)
+			send_socket(client, addr, _pid_packet)
 
-	_stdout.flush()
+def invoke(name, payload, root, option, forget, addr=None):
+	cmd = {
+		'action': 'invoke',
+		'name': name,
+		'ev': payload,
+		'root': root if root else process_root,
+		'option': option,
+		'forget': forget
+	}
+
+	if addr:
+		global _lambda_client
+		if _lambda_client == None:
+			_lambda_client = _new_socket()
+			_lambda_client.connect(addr)
+			send_socket(_lambda_client, addr, _pid_packet)
+
+		send_socket(_lambda_client, addr, cmd)
+		return recv_socket(_lambda_client, addr)
+	else:
+		send(cmd)
+		return recv()  # TODO: if lambda dies this causes deadlock
+
+def send(e):
+	if isinstance(_process_client, socket.socket):
+		send_socket(_process_client, _process_host, e)
+	else:
+		l, p = _serialize(e)
+		_process_client.buffer.write(l)
+		_process_client.buffer.write(p)
+		_process_client.flush()
 
 
-def recv_stdio():
-	return _deserialize(stdin_buf.read)
+def recv():
+	if isinstance(_process_client, socket.socket):
+		return recv_socket(_process_client, _process_host)
+	return _deserialize(sys.stdin.buffer.read)
 
-def send_socket(e):
-	l, p = _serialize(e)
-	def mysend(msg):
-		totalsent = 0
-		while totalsent < len(msg):
-			sent = _client.send(msg[totalsent:])
-			if sent == 0:
-				raise RuntimeError("socket connection broken")
-			totalsent = totalsent + sent
-	_client.sendall(l + p)
-#	mysend(l)
-#	mysend(p)
-#	print(len(l) + len(p), "written")
-#	import time
-#	_client.sendall(l)
-#	i = 0
-#	total = len(p)
-#	while True:
-#		j = i + 4
-#		if total <= j:
-#			print("\033[96m", i, "\033[0m")
-#			_client.sendall(p[i:])
-#			break
-#		print("\033[96m", i, j, "\033[0m")
-#		_client.sendall(p[i:j])
-#		i = j
 
-def recv_socket():
-	r = _deserialize(_client.recv)
-	return r;
-
-recv = recv_stdio
-send = send_stdio
+def _new_socket():
+	return socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 def connect(addr):
-	global recv, send, _client
 	if addr:
-		import socket
-		_client = socket.socket(
-			socket.AF_INET, socket.SOCK_STREAM)
-		_client.connect((addr, 31000))
-		recv = recv_socket
-		send = send_socket
-	send({
-		"action": "pid",
-		"pid": (os.getppid if sys.platform == "win32"
-			else os.getpid)()
-	})
+		global recv, send, _process_client
+		_process_client = _new_socket()
+		_process_client.connect(_process_host)
+	send(_pid_packet)
 
 if tmpcred := os.environ.get("AWS_TEMPORARY_CREDENTIAL"):
 	def get_credential(refresh=True):

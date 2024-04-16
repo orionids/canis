@@ -4,9 +4,10 @@
 // Distributed under ISC License
 'use strict';
 
-var list;
 var child_process;
 var net;
+var pathLib = require("path");
+var list = require("canis/list");
 var context = require("canis/context");
 var server = require("canis/server");
 var string = require("canis/string");
@@ -14,32 +15,77 @@ var object = require("canis/object");
 var commLog = false;
 var processServer;
 var gcRequested;
+var childMap = new Map();
+var packetContext;
+
+class MessageContext {
+	constructor(rtctx, callback) {
+		this.idle = undefined; // idle.child[.client], but idle can be null
+		this.child = undefined;
+		this.rt = undefined;
+		this.rtctx = rtctx;
+		this.output = undefined;
+		this.invoke = undefined;
+		this.callback = callback;
+	}
+	send(o) {
+		var s = Buffer.from(JSON.stringify(o));
+		var b = Buffer.alloc(4);
+		b.writeUInt32BE(s.length);
+		this.output.write(b);
+		this.output.write(s);
+	}
+}
+
+class PacketContext {
+	constructor(reuse, client) {
+		this.chunk = [];
+		this.size = undefined;
+		this.current = 0;
+		this.reuse = reuse;
+		this.normalExit = false;
+		this.msgctx = undefined;
+		this.client = client;
+		if (client) list.linkCircularNode(packetContext, this);
+	}
+};
 
 if (process.platform == "win32") {
 	var fs = require("fs");
-	var pathLib = require("path");
 	var pathEnv = process.env.PATH.split(pathLib.delimiter);
 }
 
 function
-invokeLambda(prefix, msg, child)
+invokeLambda(msgctx, prefix, msg)
 {
 	var name = msg.name;
 	if (name.indexOf(prefix) === 0)
 		name = name.substring(prefix.length);
 
-	module.exports(context, name, JSON.parse(msg.ev), 0,
-	function(err, data) {
-		if (msg.response)
-			child.send({
+	var flag = 0;
+	var option = msg.option;
+	if (option) {
+		if (!Array.isArray(option)) option = [option];
+		var i = option.length;
+		while (i > 0) {
+			var f = module.exports[option[--i]];
+			if (f) flag |= f;
+		}
+	}
+
+	module.exports(context, name, JSON.parse(msg.ev), msg.root,
+		msg.forget? flag | module.exports.FORGET : flag,
+		function(err, data) {
+			msgctx.send(err? err : {
+				statusCode: msg.forget? 202 : 200,
 				action: "result",
-				payload: JSON.stringify(data)
+				payload: JSON.stringify(data),
 			});
-	})
+		})
 }
 
 module.exports = function(
-	context, name, param, flag, callback, config, symbol)
+	context, name, param, root, flag, callback, config, symbol)
 {
 	function invokeLocal (prefix) {
 		if (!prefix.runtime) {
@@ -47,7 +93,8 @@ module.exports = function(
 		}
 		var rtctx = {
 			functionName: name,
-			symbol: symbol
+			symbol: symbol,
+			root: root
 		};
 		if (config) {
 			rtctx.lambdaPrefix = string.resolveCache(
@@ -57,6 +104,10 @@ module.exports = function(
 
 rtctx.log_group_name = "group";
 rtctx.aws_request_id = 'reqid'
+		if (flag & module.exports.FORGET) {
+			callback(null, {});
+			callback = function() {}
+		}
 		module.exports.handler(
 			context, prefix.runtime, rtctx, {
 				src: prefix.lambda,
@@ -66,49 +117,6 @@ rtctx.aws_request_id = 'reqid'
 				param: param,
 				remark: flag & module.exports.NO_REMARK? false : true,
 			}, callback);
-		return;
-		try {
-			param.method = "POST";
-			param.url = "/";
-			var r = param;
-
-			/* XXX routine in request.js */
-			r.on = function(n,f) {
-					switch (n) {
-						case "data" :
-						f( Buffer.from( r.body === undefined? "" :
-							JSON.stringify(r.body,0,2) ) );
-						break;
-						case "end": f(); break;
-					}
-				}
-			if (! prefix.runtime) {
-					prefix.runtime = "python"; // XXX
-			}
-			return server.invoke( {
-				"/" : {
-					"POST" : prefix,
-				}
-			}, process.cwd(), r, {
-				writeHead: function(s,h) {
-					console.log(s, h);
-				},
-				write: function(res) {
-//					console.log(r, typeof(r));
-					callback(null, res);
-				},
-				end: function() {
-//					callback();
-				}
-			}, { fork: context.fork } );
-		} catch (e) {
-			if (e.code !== "MODULE_NOT_FOUND") {
-				setTimeout( function() {
-					callback(e);
-				} );
-				return true;
-			}
-		}
 	}
 
 	var f = context.get("canis_invoke");
@@ -139,12 +147,12 @@ rtctx.aws_request_id = 'reqid'
 		prefix = context.lambdaPrefix;
 		context.lambda().invoke( {
 			FunctionName: prefix ? prefix + name : name,
-			InvocationType: 'RequestResponse',
+			InvocationType: flag & module.exports.FORGET? 'Event' : 'RequestResponse',
 			LogType: 'Tail',
 			Payload: typeof param === 'string' ? param : JSON.stringify(param)
 		}, function (err, data) {
 			if (err) {
-				callback(err);
+				callback(err, {});
 			} else if (data.StatusCode == 200) {
 				// to maintain consistency with calling local function,
 				// assume json formatted result
@@ -158,7 +166,11 @@ rtctx.aws_request_id = 'reqid'
 			}
 		} );
 	} else {
-		callback({code: "ResourceNotFoundException"});
+		callback({
+			code: "ResourceNotFoundException",
+			message: "Function not found: " + name,
+			statusCode: 404
+		});
 	}
 };
 
@@ -176,7 +188,6 @@ matchPath(filename, pathenv, plain) {
 	}
 }
 
-var childTable = {};
 
 function
 executeLocal(exname, arg, option)
@@ -188,34 +199,33 @@ executeLocal(exname, arg, option)
 }
 
 function
-execute(exname, arg, socket, callback)
+execute(msgctx, exname, arg, socket, reuse, invoke, callback)
 {
 	if (socket) {
-		socket(function() {
-			var child = executeLocal(
+		socket(reuse, function() {
+			msgctx.child = executeLocal(
 				exname, arg, {stdio: ["pipe", "pipe", 2]});
-			childTable[child.pid] = {
-				child: child,
-				callback: callback
-			};
-		});
+			childMap.set(msgctx.child.pid, msgctx);
+			msgctx.invoke = invoke; // XXX
+		}, callback);
 	} else {
 		var child = executeLocal(
 			exname, arg, {stdio: ["pipe", "pipe", 2]});
-		callback(child, child.stdout, child.stdin);
+		msgctx.child = child;
+		invoke(child.stdin);
+		var pktctx = new PacketContext(reuse);
+		pktctx.msgctx = msgctx;
+		child.stdout.on("data", function(d) {
+			receiveMessage(pktctx, d, function (msg) {
+				dispatchMessage(null, pktctx, msg, callback);
+			});
+		});
 	}
 }
 
-function
-requireList()
-{
-	if (list === undefined) list = require("canis/list");
-	return list;
-}
 
 module.exports.getRuntime = function()
 {
-	requireList();
 	return this.runtime === undefined ? (this.runtime = {
 		active: list.circularHead(),
 		idle: list.circularHead()
@@ -227,7 +237,7 @@ process.on("SIGTTOU", function() {
 	console.log("SIGTERM!!!!!!!!!!!!!");
 });
 child_process = require("child_process");
-execute("bash", ["-i"], false, function(child, input, output) {
+execute("bash", ["-i"], false, function(child, output) {
 	var node = {
 		child: child,
 		quit: function() {
@@ -235,7 +245,7 @@ execute("bash", ["-i"], false, function(child, input, output) {
 			output.write("exit\n");
 		}
 	};
-	requireList().linkCircularNode(
+	list.linkCircularNode(
 		module.exports.getRuntime().active, node);
 	input.on("data", function(d) {
 		console.log(d.toString("UTF-8"));
@@ -246,121 +256,281 @@ execute("bash", ["-i"], false, function(child, input, output) {
 });
 }
 
-module.exports.gc = function()
+module.exports.gc = function(code, callback)
 {
 	if (processServer) {
 		gcRequested = true;
-		processServer.getConnections(function(err,count) {
-			if (count <= 0) {
 				processServer.close();
+		processServer.getConnections(function(err,count) {
+			if (processServer && (count <= 0 || code == "SIGTERM")) {
+				if (packetContext) {
+					for (var pktctx = packetContext.next;
+						pktctx != packetContext; pktctx = pktctx.next) {
+						pktctx.normalExit = true;
+						pktctx.client.destroy();
+					}
+				}
+//				processServer.close();
 				processServer = undefined;
+			} else if (typeof(callback) === "function") {
+				callback(count);
 			}
 		});
 	}
 }
 
+function
+receiveMessage(ctx, d, message)
+{
+	var chunk = ctx.chunk;
+	while (true) {
+		var size = ctx.size;
+		if (size === undefined) {
+			if ((ctx.current += d.length) <= 4) {
+				chunk.push(d);
+				return;
+			}
+			if (chunk.length > 0) {
+				chunk.push(d);
+				d = Buffer.concat(chunk);
+				ctx.chunk = chunk = [];
+			}
+			ctx.size = size = parseInt(d.slice(0,4).toString("hex"),16);
+			d = d.slice(4);
+			ctx.current = 4;
+if (commLog) console.log( ">>>>> size ", size,"with payload : ", d.length);
+		}
+		var current = (ctx.current += d.length);
+		if (current >= size) {
+			var dispatchPacket = function() {
+				message(JSON.parse(Buffer.concat(chunk)));
+				ctx.chunk = chunk = [];
+				ctx.size = undefined;
+				ctx.current = 0;
+			};
+			if (current > size) {
+				var end = d.length + size - current;
+				chunk.push(d.slice(0,end));
+if (commLog) console.log(">>>>> Exceeding payload received, end=", end);
+				dispatchPacket();
+				d = d.slice(end);
+				continue;
+			} else {
+if (commLog) console.log(">>>>> Exact payload received");
+				chunk.push(d);
+				dispatchPacket();
+			}
+
+/*							dispatchMessage(
+				JSON.parse(r.slice( 2,
+				2 + parseInt( r.slice(0,2).
+				toString("hex"),16) )) );
+			size = undefined;
+			current = 0;*/
+		} else {
+			chunk.push(d);
+		}
+		break;
+	}
+}
+
+function
+dispatchMessage(client, pktctx, msg, callback)
+{
+	function sendResolved(r)
+	{
+		msgctx.send({
+			action: "resolved",
+			body: r
+		});
+	}
+	var msgctx = pktctx.msgctx; // redundant for pid
+	switch (msg.action) {
+		case "pid":
+		if (client) {
+			if (msgctx = childMap.get(msg.pid)) {
+				childMap.delete(msg.pid);
+				if (msgctx.invoke) msgctx.invoke(client);
+			} else {
+				msgctx = new MessageContext({}, callback);
+				msgctx.output = client;
+			}
+			pktctx.msgctx = msgctx;
+		}
+		break;
+		case "result":
+		callback(msg.err, msg.data);
+		break;
+		case "reuse":
+		list.unlinkCircularNode(msgctx.idle);
+		if (pktctx.reuse) {
+			list.linkCircularNode(msgctx.rt.idle, msgctx.idle);
+		} else {
+			msgctx.send({action: "exit"});
+			if (pktctx.client) {	
+				pktctx.normalExit = true;
+				//delete pktctx.client;
+			}
+		}
+		break;
+		case "invoke":
+		invokeLambda(msgctx, msgctx.rtctx.lambdaPrefix, msg);
+		break;
+		case "resolve":
+		var rtctx = msgctx.rtctx;
+		var resolve = context.get("resolve")
+		if (resolve) {
+			resolve(
+				msg.body, rtctx.symbol,
+				sendResolved
+			);
+		} else {
+			sendResolved(
+				object.clone(msg.body, rtctx));
+		}
+		break;
+		case "command":
+		msgctx.send({
+			action: "command",
+			body: "HELLO!!!"
+		});
+		break;
+		case "credential":
+		var aws = require("canis/context").aws();
+		var cred = aws.config.credentials;
+		function sendCredential() {
+			msgctx.send({
+				"action": "credential",
+				"body": [
+					cred.accessKeyId,
+					cred.secretAccessKey,
+					cred.sessionToken,
+					cred.expireTime]
+			});
+		}
+		if (msg.refresh && cred.needsRefresh())
+			cred.refresh(sendCredential);
+		else
+			sendCredential();
+	}
+}
+
+
+module.exports.exit = function()
+{
+	var runtime = context.get("fork").runtime;
+	for (var r in runtime) {
+		r = runtime[r];
+		var head = r.active;
+		for (var i = 0; i < 2; i++ ) {
+			if (head)
+				for (var idle = head.next; idle != head; idle = idle.next)
+					idle.msgctx.send({action: "exit"});
+			head = r.idle;
+		}
+	}
+}
+
+module.exports.socket = function (reuse, done, callback, quit, port, report)
+{
+	if (net) {
+		done();
+	} else {
+		net = require("net");
+		packetContext = list.circularHead();
+		processServer = net.createServer(function(client) {
+			var pktctx = new PacketContext(reuse, client);
+			client.on("data", function(d) {
+				receiveMessage(pktctx, d, function(msg) {
+					dispatchMessage(client, pktctx, msg, callback);
+				});
+			});
+			client.on("close", function(err) {
+				client.destroy();
+				list.unlinkCircularNode(pktctx);
+				if (!pktctx.normalExit) {
+					if (pktctx.msgctx && !pktctx.msgctx.child && gcRequested)
+						module.exports.gc();
+					callback(new Error('UNEXPECTED_CLIENT_DISCONNECTION'));
+				}
+			});
+		});
+		processServer.listen(port? port : 31000, function() {
+			var reporterServer;
+			processServer.on("close", function() {
+				module.exports.exit();
+				if (reporterServer) reporterServer.close();
+				if (quit) quit();
+			});
+			processServer.on('error', function(err) {
+				console.log("SOCK", err);
+			});
+
+			if (report) {
+				reporterServer = require("canis/reporter")(report.port,
+				function(cmd) {
+					if (cmd == "state") {
+						var s = "";
+						var runtime = context.get("fork").runtime;
+						for (var r in runtime) {
+							s += r + ":";
+							r = runtime[r];
+							s += " active=" + list.countCircular(
+								r.active).toString() + ", idle=" +
+								list.countCircular(r.idle).toString();
+						}
+						return s;
+					}
+				}, report.manageClient);
+			}
+			done();
+		});
+	}
+};
+
 module.exports.DISABLE_LOCAL = 0x1;
 module.exports.DISABLE_REMOTE = 0x2;
 module.exports.NO_REMARK = 0x4
+module.exports.FORGET = 0x8
+
 module.exports.handler = function(
 	context, rtname, rtctx, callee, callback)
 {
-	var rt;
 	var rtpath;
-	var idle;
-	var child;
 
 	function registerOnClose() {
-		idle = {child: child};
-		child.on("close", function(code) {
-			process.exitCode = code;
-			list.unlinkCircularNode(idle);
-			if (rt.active.next == rt.active && gcRequested)
+		msgctx.idle = {child: msgctx.child, msgctx: msgctx/*XXX*/};
+		msgctx.child.on("close", function(code) {
+			if (process.exitCode == 0)
+				process.exitCode = code;
+			list.unlinkCircularNode(msgctx.idle);
+			if (msgctx.rt.active.next == msgctx.rt.active && gcRequested)
 				module.exports.gc();
 			// XXX callback with error
 		});
 	}
+
 	function activate() { /* XXX this need not to be function*/
-		list.linkCircularNode(rt.active, idle);
+		list.linkCircularNode(msgctx.rt.active, msgctx.idle);
 	}
+
 	function sendInvoke() {/* XXX this need not to be function*/
-		child.send({
+		msgctx.send({
 			action: "invoke",
 			src: src,
-			init: rt.init,
+			init: msgctx.rt.init,
 			path: path,
+			root: rtctx && rtctx.root? rtctx.root : null,
 			rtpath: rtpath,
 			handler: handlerName,
 			altered: {
-				name: rt.altered,
+				name: msgctx.rt.altered,
 				package: undefined
 			},
 			ev: ev,
 			ctx: rtctx,
 			remark: callee.remark
 		});
-	}
-
-	function sendResolved(r)
-	{
-		child.send({
-			action: "resolved",
-			body: r
-		});
-	}
-
-	function receiveMessage(d, message) {
-		while (true) {
-			if (size === undefined) {
-				current += d.length;
-				if (current <= 4) {
-					chunk.push(d);
-					return;
-				}
-				if (chunk.length > 0) {
-					chunk.push(d);
-					d = Buffer.concat(chunk);
-					chunk = [];
-				}
-				size = parseInt(d.slice(0,4).toString("hex"),16);
-				d = d.slice(4);
-				current = 4;
-if (commLog) console.log( ">>>>> size ", size,"with payload : ", d.length);
-			}
-			current += d.length;
-			if (current >= size) {
-				var dispatchPacket = function() {
-					message(
-						JSON.parse(Buffer.concat(chunk)));
-					chunk = [];
-					size = undefined;
-					current = 0;
-				};
-				if (current > size) {
-					var end = d.length +
-						size - current;
-					chunk.push(d.slice(0,end));
-if (commLog) console.log(">>>>> Exceeding payload received, end=", end);
-					dispatchPacket();
-					d = d.slice(end);
-					continue;
-				} else {
-if (commLog) console.log(">>>>> Exact payload received");
-					chunk.push(d);
-					dispatchPacket();
-				}
-
-/*							dispatchMessage(
-					JSON.parse(r.slice( 2,
-					2 + parseInt( r.slice(0,2).
-					toString("hex"),16) )) );
-				size = undefined;
-				current = 0;*/
-			} else {
-				chunk.push(d);
-			}
-			break;
-		}
 	}
 
 	var fork = context.get("fork");
@@ -374,182 +544,83 @@ if (commLog) console.log(">>>>> Exact payload received");
 	var ev = callee.param;
 	if (fork === undefined) {
 		try {
-			require(path? path + "/" + src : src)[
+			require(!path || pathLib.isAbsolute(src)? src : path + "/" + src)[
 				handlerName ? handlerName : "handler"]
 				(ev, rtctx, callback);
 		} catch (e) {
 			throw (e);
 		}
 	} else {
-		requireList();
+		var msgctx = new MessageContext(rtctx, callback);
 		var runtime = fork.runtime;
 		if (runtime === undefined)
 			runtime = fork.runtime = {};
-		rt = runtime[rtname];
+		msgctx.rt = runtime[rtname];
 		for (;;) {
-			if (rt === undefined)
-				runtime[rtname] = rt = {};
-			else if (rt.idle)
+			if (msgctx.rt === undefined)
+				runtime[rtname] = msgctx.rt = {};
+			else if (msgctx.rt.idle)
 				break;
 
-			rt.idle = list.circularHead();
-			rt.active = list.circularHead();
+			msgctx.rt.idle = list.circularHead();
+			msgctx.rt.active = list.circularHead();
 			break;
 		}
 
-		idle = rt.idle.next;
-		if (idle !== rt.idle) {
-			list.unlinkCircularNode(idle);
-			child = idle.child;
+		msgctx.idle = msgctx.rt.idle.next;
+		if (msgctx.idle !== msgctx.rt.idle) {
+			list.unlinkCircularNode(msgctx.idle);
+			msgctx = msgctx.idle.msgctx; //XXX
+			//msgctx.callback = callback;
+			msgctx.rtctx = rtctx;
+////			msgctx.rt = rt;	
+//			msgctx.child = msgctx.idle.child;
+// XXX SEND MESSAGE TO RESEND PID!
+	//		msgctx.send({action: "reuse"});
 		} else {
 			if (child_process === undefined) {
 				child_process = require("child_process");
 			}
 
-			var dispatchMessage = function(msg) {
-				switch (msg.action) {
-					case "result":
-					callback(msg.err, msg.data);
-					break;
-					case "reuse":
-					list.unlinkCircularNode(idle);
-					if (fork.reuse) {
-						list.linkCircularNode(rt.idle, idle);
-					} else {
-						child.send({action: "exit"});
-						if (child.client) {
-							child.client.normalExit = true;
-							delete child.client
-						}
-					}
-					break;
-					case "invoke":
-					invokeLambda(
-						rtctx.lambdaPrefix, msg, child);
-					break;
-					case "resolve":
-					var resolve = context.get("resolve")
-					if (resolve) {
-						resolve(
-							msg.body, rtctx.symbol,
-							sendResolved
-						);
-					} else {
-						sendResolved(
-							object.clone(msg.body, rtctx));
-					}
-					break;
-					case "command":
-					child.send({
-						action: "command",
-						body: "HELLO!!!"
-					});
-					break;
-					case "credential":
-					var aws = require("canis/context").aws();
-					var cred = aws.config.credentials;
-					function sendCredential() {
-						child.send({
-							"action": "credential",
-							"body": [
-								cred.accessKeyId,
-								cred.secretAccessKey,
-								cred.sessionToken,
-								cred.expireTime]
-						});
-					}
-					if (msg.refresh && cred.needsRefresh())
-						cred.refresh(sendCredential);
-					else
-						sendCredential();
-				}
-			};
-			function socket(done) {
-				if (net) {
-					done();
-				} else {
-					net = require("net");
-					processServer = net.createServer(function(client) {
-						client.on("data", function(d) {
-							receiveMessage(d, function(msg) {
-								if (msg.action == "pid") {
-									var t = childTable[msg.pid];
-									delete childTable[msg.pid]
-									t.child.client = client;
-									t.callback(t.child, client, client);
-								}
-							});
-						});
-						client.on("close", function(err) {
-							if (!client.normalExit)
-								callback(new Error(
-									'UNEXPECTED_CLIENT_DISCONNECTION'));
-						});
-					});
-					processServer.listen(31000, function() {
-//						processServer.on('close', function() {
-//							console.log("SOCKCLOSE");
-//						});
-						processServer.on('error', function(err) {
-							console.log("SOCK", err);
-						});
-						done();
-					});
-				}
-			}
-
 			// XXX number of processes should be limited
 			if (rtname === "nodejs") {
-				child = child_process.fork(
-					__dirname + "/handler");
-				child.on("message", dispatchMessage);
+				msgctx.child = child_process.fork(__dirname + "/handler"); 
+				msgctx.child.on("message", function (msg) {
+					dispatchMessage(null, msgctx, msg, callback);
+				});
 			} else {
 				var rtparam = {
 					symbol: [
-						rt.symbol,
+						msgctx.rt.symbol,
 						{ "path": path },
 						process.env
 					]
 				};
-				var arg = rt.arg? object.clone(
-					rt.arg, rtparam) : [];
-				if (rt.ext) arg.push(
-					__dirname + "/runtime/invoke." + rt.ext);
+				var arg = msgctx.rt.arg? object.clone(
+					msgctx.rt.arg, rtparam) : [];
+				if (msgctx.rt.ext) arg.push(
+					__dirname + "/runtime/invoke." + msgctx.rt.ext);
 
 // use socket or pipe
-var sock;// = socket;
+var sock;// = module.exports.socket;
 //arg.push(':127.0.0.1');
 
-				if (rt.callback) arg.push(rt.callback);
-				if (rt.extra) {
+				if (msgctx.rt.callback) arg.push(msgctx.rt.callback);
+				if (msgctx.rt.extra) {
 					arg.push(".")
-					arg = arg.concat(rt.extra);
+					arg = arg.concat(msgctx.rt.extra);
 				}
 				rtparam.partial = true;
-				rtpath = rt.path? object.clone(
-					rt.path, rtparam) : {};
+				rtpath = msgctx.rt.path? object.clone(
+					msgctx.rt.path, rtparam) : {};
 
-				var exname = rt.exec? rt.exec : rtname
-				var chunk = [];
-				var size, current = 0;
-				execute( exname, arg, sock,
-				function(newChild, input, output) {
-					child = newChild;
-					input.on("data", function(d) {
-						receiveMessage(d, dispatchMessage);
-					});
-					child.send = function(o) {
-						var s = Buffer.from(
-							JSON.stringify(o));
-						var b = Buffer.alloc(4);
-						b.writeUInt32BE(s.length);
-						output.write(b);
-						output.write(s);
-					};
+				var exname = msgctx.rt.exec? msgctx.rt.exec : rtname
+				execute(msgctx, exname, arg, sock, fork.reuse, function(output) {
+					msgctx.output = output;
 					registerOnClose();
 					activate();
 					sendInvoke();
-				});
+				}, callback);
 				return;
 			}
 			registerOnClose(); /* XXX need not to be a func */

@@ -34,7 +34,6 @@ exports.initialize = function(aws) {
 		} catch (e) {
 		}
 
-		var oldcred = aws.config.credentials;
 		class cred extends aws.Credentials {
 			constructor() {
 				super();
@@ -44,6 +43,7 @@ exports.initialize = function(aws) {
 				var duration = parseInt(string.resolve(c[3]));
 				this.duration = duration < 900 ? 900 : duration > 129600 ? 129600 : duration;
 				this.path = string.resolve(c[4]);
+				this.callbacks = [];
 				try {
 					c = JSON.parse(fs.readFileSync(this.path));
 					this.expireTime = new Date(c.expireTime);
@@ -51,45 +51,49 @@ exports.initialize = function(aws) {
 					this.secretAccessKey = c.secretAccessKey;
 					this.sessionToken = c.sessionToken;
 				} catch (e) {
-					this.expireTime = "1970-01-01 00:00:00Z";
+					this.expireTime = new Date("1970-01-01 00:00:00Z");
 				}
 			}
 
 			refresh(callback) {
 				var p = otp.google(this.mfaKey);
-				var param = {
+				var newcred = this;
+				var callbacks = newcred.callbacks;
+				callbacks.push(callback);
+				if (callbacks.length > 1) return; // credential update in progress
+
+				aws.config.credentials = oldcred;
+				context.service("STS").getSessionToken({
 					DurationSeconds: this.duration, 
 					SerialNumber: this.serialNumber,
 					TokenCode: p.code
-				};
-				var newcred = this;
-				aws.config.credentials = oldcred;
-				process.nextTick(function() {
-					context.service("STS").getSessionToken(
-						param, function(err, data) {
-							if (err) {
-								console.log(err);
-							} else {
-								var c = data.Credentials;
-								aws.config.credentials = newcred;
-								newcred.expired = false;
-								newcred.expireTime = c.Expiration;
-								newcred.accessKeyId = c.AccessKeyId;
-								newcred.secretAccessKey = c.SecretAccessKey;
-								newcred.sessionToken = c.SessionToken;
-								fs.writeFileSync(newcred.path, JSON.stringify({
-									expireTime: newcred.expireTime,
-									accessKeyId: newcred.accessKeyId,
-									secretAccessKey: newcred.secretAccessKey,
-									sessionToken: newcred.sessionToken
-								}, null, 3));
-							}
-							callback();
-						});
+				}, function(err, data) {
+					if (err) {
+						console.log(err);
+					} else {
+						var c = data.Credentials;
+						newcred.expired = false;
+						newcred.expireTime = c.Expiration;
+						newcred.accessKeyId = c.AccessKeyId;
+						newcred.secretAccessKey = c.SecretAccessKey;
+						newcred.sessionToken = c.SessionToken;
+						fs.writeFileSync(newcred.path, JSON.stringify({
+							expireTime: newcred.expireTime,
+							accessKeyId: newcred.accessKeyId,
+							secretAccessKey: newcred.secretAccessKey,
+							sessionToken: newcred.sessionToken
+						}, null, 3));
+					}
+					aws.config.credentials = newcred;
+					newcred.callbacks = []
+					for (var i = 0; i < callbacks.length; i++) callbacks[i]();
 				});
 			}
 		};
-		aws.config.credentials = new cred();
+		if (process.env.AWS_TEMPORARY_CREDENTIAL) {
+			var oldcred = aws.config.credentials;
+			aws.config.credentials = new cred();
+		}
 	}
 	recoverConfig(aws);
 	return aws;

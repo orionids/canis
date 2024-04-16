@@ -109,7 +109,7 @@ throw new Error("Unexpected operator " + key.cond);
 		}
 	} else {
 		var invoke = require("canis/invoke");
-		invoke( context, name, null, invoke.DISABLE_REMOTE,
+		invoke( context, name, null, null, invoke.DISABLE_REMOTE,
 		function(err, data) {
 			if (err) {
 				callback(err);
@@ -379,7 +379,7 @@ put(context, name, key, body, unlock, callback, expr)
 	}
 
 	var invoke = require("canis/invoke");
-	invoke( context, name, null, invoke.DISABLE_REMOTE,
+	invoke(context, name, null, null, invoke.DISABLE_REMOTE,
 	function(err, data) {
 		function store(table, body, key, sync) {
 			var prev = table[key.pval];
@@ -453,7 +453,7 @@ put(context, name, key, body, unlock, callback, expr)
 				callback();
 			}
 		}
-	} );
+	});
 }
 
 exports.put = function( context, tblpref, name,
@@ -593,7 +593,7 @@ exports.delete = function
 		} );
 	} else {
 		var invoke = require("canis/invoke");
-		invoke( context, name, null, invoke.DISABLE_REMOTE,
+		invoke(context, name, null, null, invoke.DISABLE_REMOTE,
 		function(err, data) {
 			if (err) {
 				callback(err);
@@ -634,7 +634,7 @@ exports.delete = function
 				}, true ) )
 					callback();
 			}
-		} );
+		});
 	}
 };
 
@@ -660,7 +660,7 @@ exports.scan = function(context, tblpref, name, callback)
 {
 	if (tblpref === undefined) {
 		var invoke = require("canis/invoke");
-		invoke( context, name, null, invoke.DISABLE_REMOTE,
+		invoke(context, name, null, null, invoke.DISABLE_REMOTE,
 		function(err,data) {
 			var scan = {
 				Items: []
@@ -682,7 +682,7 @@ exports.scan = function(context, tblpref, name, callback)
 			scan.Count = cnt;
 
 			callback(null, scan);
-		} );
+		});
 	} else {
 		var param = {
 			TableName: tblpref + name,
@@ -732,8 +732,7 @@ exports.snapshot = function
 		name = name; /* XXX */
 	} else {
 		var invoke = require("canis/invoke");
-		invoke( context, name,
-		null, invoke.DISABLE_REMOTE,
+		invoke(context, name, null, null, invoke.DISABLE_REMOTE,
 		function(err, data) {
 			if (err) {
 				callback(err);
@@ -754,7 +753,7 @@ exports.snapshot = function
 					callback();
 				}
 			}
-		} );
+		});
 	}
 };
 

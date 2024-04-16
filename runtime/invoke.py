@@ -44,9 +44,13 @@ def initialize(cmd):
 		def _cvt(name):
 			return [_cygtodos(p) for p in path.get(name, [])]
 		sys.path =  _cvt("major") + sys.path + _cvt("minor")
-	path = cmd.get("path")
-	if path:
-		sys.path.insert(0, _cygtodos(path))
+
+	path = cmd.get("root")
+	io.process_root = path
+	for i in range(0,2):
+		if path:
+			sys.path.insert(0, _cygtodos(path))
+		path = cmd.get("path")
 
 	init = cmd.get("init")
 	if init:
@@ -56,7 +60,7 @@ def initialize(cmd):
 			try:
 				imp = __import__(src["name"], fromlist=lst)
 			except ModuleNotFoundError as e:
-				print(e)
+				print(e, "while loading", src["name"] + "." + lst[0])
 #					for evt in _event:
 #						if evt("install", e.name):
 #							print(sys.executable + " -m pip install " + e.name)
@@ -175,7 +179,7 @@ if __name__ == "__main__":
 				self.new_line = True
 			self.lock.release();
 
-	sys.stderr = StdErr()
+	sys.stdout = sys.stderr = StdErr()
 	port = os.environ.get("PYDEV_PORT")
 	if port is not None:
 		_pydevd = __import__("pydevd")
@@ -190,7 +194,6 @@ if __name__ == "__main__":
 			_notify("before_lambda")
 			initialize(cmd)
 			path, name = _module_info(cmd["src"])
-#			sys.path.append('/home/dan.park/opt/pycharm-2020.3.3/plugins/python/helpers/pycharm')
 			if path:
 				i = 0
 				while path.startswith("../", i):
@@ -228,6 +231,7 @@ if __name__ == "__main__":
 			handler = cmd.get("handler")
 			handler = getattr(l, handler if handler else "lambda_handler", None)
 			if handler:
+				err = None
 				try:
 					r = handler(cmd.get("ev", {}), ctx)
 				except Exception as e:
@@ -239,10 +243,10 @@ if __name__ == "__main__":
 						# try to parse json
 						r = json.loads(r)
 					except:
-						pass
+						err = r
 				io.send({
 					"action": "result",
-					"err": None,
+					"err": err,
 					"data": r
 				})
 			else:
@@ -256,7 +260,6 @@ if __name__ == "__main__":
 						"err": None,
 						"data": getattr(a, handler if handler else "handler")(l)
 					})
-					pass
 				else:
 					_exception(e)
 			_notify("after_lambda")
@@ -273,6 +276,8 @@ if __name__ == "__main__":
 			if _pydevd:
 				_pydevd.stoptrace()
 			return None
+		elif action == "reuse":
+			print("REUSE!!!!!!!!!!!!!!!!")
 		return cmd
 
 	class _Context:

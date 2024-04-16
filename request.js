@@ -13,6 +13,7 @@ var parser = require("canis/parser");
 var context = require("canis/context");
 var server = require("canis/server");
 var iterator = require("canis/iterator");
+var syntax = require("canis/syntax");
 var path = require("path");
 
 function
@@ -84,9 +85,12 @@ invokeLambda(api, symbol, request, response, local)
 			string.resolve(apiConfig.lambdaPrefix,symbol);
 	}
 
-	invoke(context, request.api, request.payload,
-		local? response.remark === false? invoke.DISABLE_REMOTE | invoke.NO_REMARK : invoke.DISABLE_REMOTE : invoke.DISABLE_LOCAL,
+	invoke(context, request.api, request.payload, null,
+		local? response.remark === false?
+		invoke.DISABLE_REMOTE | invoke.NO_REMARK :
+		invoke.DISABLE_REMOTE : invoke.DISABLE_LOCAL,
 		function(err,data) {
+            if (err) process.exitCode = 1;
 			response.writeHead(err?err.statusCode:200,{});
 			response.write(data?typeof(data)=="string"?
 				data:JSON.stringify(data):"");
@@ -140,6 +144,17 @@ exports.http = function
 	Object.assign(p, param);
 	exports.https( server, api, basepath,
 		request, response, p );
+}
+
+exports.show = function
+(context, api, basepath, request, response, param) {
+	var symbol;
+	if (param) {
+		if (param.arg != "raw") symbol = param.symbol;
+	}
+	cloneTC(request, symbol, function (r, name) {
+		console.log(syntax.highlight(JSON.stringify(r, null, 3)));
+	});
 }
 
 exports.local = function
@@ -557,7 +572,8 @@ var callee = {
 	"https" : exports.https,
 	"http" : exports.http,
 	"postman" : exports.postman,
-	"resolve" : exports.resolve
+	"resolve" : exports.resolve,
+	"show": exports.show
 };
 
 exports.callee = function (name ) {
@@ -619,11 +635,10 @@ exports.iterate = function( context, target, symbol,
 	perform();
 };
 
-exports.basePath = function(tc)
+exports.basePath = function(tc, apiset)
 {
 	var base = tc.base;
 	if (base !== null && base !== undefined) return base;
-	var apiset = tc.apiSet;
 	if (apiset) {
 		if (Array.isArray(apiset)) apiset = apiset[0];
 		var i = apiset.lastIndexOf("/")

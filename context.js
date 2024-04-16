@@ -45,6 +45,8 @@ module.exports = function()
 	this._entity = defaultEntity;
 };
 
+module.exports.modulePath = undefined;
+
 module.exports._entity = defaultEntity;
 
 module.exports.aws = awsContext;
@@ -61,7 +63,7 @@ module.exports.ddbcli = function() {
 module.exports.lambda = function() {
 	var lambda = this._entity._lambda;
 	if (!lambda) {
-		lambda = new awsContext().Lambda();
+		lambda = new awsContext("Lambda");
 		this._entity._lambda = lambda;
 	}
 	return lambda;
@@ -109,14 +111,11 @@ module.exports.module = function(name, loc, lazy) {
 				loc += ".js";
 
 			var p = this.get("modulePath");
-			if (p === undefined) {
-				p = __dirname + "/module";
-			}
+			if (p === undefined) p = __dirname + "/module";
 			p += "/" + loc.substring(1);
 			if (!fs.existsSync(p)) {
 				var req = entity[account](
-					account.substring(1),
-					loc.substring(i));
+					account.substring(1), loc.substring(i));
 				var result = child_process.spawnSync(
 					process.argv[0], [
 						__dirname + "/getsync",

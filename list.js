@@ -8,7 +8,7 @@ exports.circularHead = function()
 	var head = {};
 	head.prev = head.next = head;
 	return head;
-}
+};
 
 exports.linkCircularNode = function(prev,node)
 {
@@ -17,7 +17,7 @@ exports.linkCircularNode = function(prev,node)
 	next.prev = node;
 	prev.next = node;
 	node.prev = prev;
-}
+};
 
 exports.unlinkCircularNode = function(node)
 {
@@ -28,4 +28,11 @@ exports.unlinkCircularNode = function(node)
 		prev.next = next;
 		next.prev = prev;
 	}
-}
+};
+
+exports.countCircular = function(head)
+{
+	var n = 0;
+	if (head) for (var node = head.next; node != head; node = node.next) n++;
+	return n;
+};
