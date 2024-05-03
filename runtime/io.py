@@ -8,8 +8,9 @@ import json
 import decimal
 import socket # not always needed
 
+status_line="[[[STATUS]]]"
 process_root = None
-_process_client = sys.stdout
+_process_client = sys.stderr
 _process_host = ("127.0.0.1", 31000)
 _lambda_client = None
 _pid_packet = {
@@ -108,10 +109,12 @@ def recv():
 def _new_socket():
 	return socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-def connect(addr):
+def initialize(addr = None):
 	if addr:
 		global recv, send, _process_client
 		_process_client = _new_socket()
+		if addr != "default" and addr != True:
+			_process_host = addr
 		_process_client.connect(_process_host)
 	send(_pid_packet)
 

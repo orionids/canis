@@ -4,7 +4,15 @@
 // Distributed under ISC License
 
 var net = require("net");
-var list = require("canis/list");
+var List = require("canis/list");
+
+class ReporterClient extends List {
+	constructor(prev, reporter) {
+		super();
+		this.reporter = reporter;
+		this.linkCircular(prev)
+	}
+}
 
 module.exports = function(port, handler, manageClient) {
 	var server = net.createServer(function(reporter) {
@@ -20,14 +28,8 @@ module.exports = function(port, handler, manageClient) {
 			reporter.write("Unknown argument: " + arg + "\n");
 		}
 
-		if (manageClient) {
-			var l = {
-				next: null,
-				prev: null,
-				reporter: reporter
-			}
-			list.linkCircularNode(context.client, l);
-		}
+		if (manageClient)
+			var l = new ReporterClient(context.client, reporter);
 
 		var rl = require("readline").createInterface({
 			input: reporter,
@@ -47,7 +49,7 @@ module.exports = function(port, handler, manageClient) {
 		reporter.on("end", function() {
 			rl.close();
 			if (manageClient)
-				list.unlinkCircularNode(l);
+				l.unlinkCircular();
 		});
 	}).listen(port, function() {
 		handler([1]);
@@ -56,7 +58,7 @@ module.exports = function(port, handler, manageClient) {
 	if (!manageClient) return server;
 
 	var context = {
-		client: list.circularHead(),
+		client: new List(true),
 		server: server,
 		close: function() {
 			for (var l = context.client.next; l != context.client; l = l.next)

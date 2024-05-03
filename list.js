@@ -3,36 +3,32 @@
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
 
-exports.circularHead = function()
-{
-	var head = {};
-	head.prev = head.next = head;
-	return head;
-};
-
-exports.linkCircularNode = function(prev,node)
-{
-	var next = prev.next;
-	node.next = next;
-	next.prev = node;
-	prev.next = node;
-	node.prev = prev;
-};
-
-exports.unlinkCircularNode = function(node)
-{
-	var prev = node.prev;
-	if (prev !== undefined) {
-		node.prev = undefined;
-		var next = node.next;
-		prev.next = next;
-		next.prev = prev;
+module.exports = class {
+	constructor(circular) {
+		this.next = this.prev = circular? this : undefined;
 	}
-};
 
-exports.countCircular = function(head)
-{
-	var n = 0;
-	if (head) for (var node = head.next; node != head; node = node.next) n++;
-	return n;
+	linkCircular(prev) {
+		var next = prev.next;
+		this.next = next;
+		next.prev = this;
+		prev.next = this;
+		this.prev = prev;
+	}
+
+	unlinkCircular() {
+		var prev = this.prev;
+		if (prev !== undefined) {
+			this.prev = undefined;
+			var next = this.next;
+			prev.next = next;
+			next.prev = prev;
+		}
+	}
+
+	countCircular() {
+		var n = 0;
+		for (var node = this.next; node != this; node = node.next) n++;
+		return n;
+	}
 };

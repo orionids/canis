@@ -1,9 +1,17 @@
 "use strict";
 var net = require("net");
-var list = require("canis/list");
+var List = require("canis/list");
 var monitor = require("canis/monitor");
 var reporter = require("canis/reporter");
 
+
+class Client extends List {
+	constructor(prev, socket) {
+		super();
+		this.socket = socket;
+		this.linkCircular(prev);
+	}
+}
 
 var connection = 0;
 var server = net.createServer(function (client) {
@@ -31,7 +39,7 @@ monitor({
 		};
 		return {
 			instance: new instance(null, null, 10002),
-			client: list.circularHead()
+			client: new List(true)
 		}
 	},
 	parse: function(context, input, control) {
@@ -41,18 +49,14 @@ monitor({
 					control();
 					break;
 				case "connect":
-					list.linkCircularNode(context.client, {
-						next: null,
-						prev: null,
-						socket: net.connect(10001, "127.0.0.1", function() {})
-					})
+					new Client(context.client, net.connect(10001, "127.0.0.1", function() {}))
 					break;
 				case "disconnect":
 					var next = context.client.next;
 					if (context.client == next) {
 						console.log("empty");
 					} else {
-						list.unlinkCircularNode(next)
+						next.unlinkCircular();
 						next.socket.destroy();
 					}
 					break; 

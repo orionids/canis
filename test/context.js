@@ -1,4 +1,4 @@
-var c = require( "canis/context" );
+var c = require("canis/context");
 //c.ddbcli();
 
 //context.ddbcli();
@@ -15,3 +15,5 @@ context.module("validator", "canis", "val");
 console.log("AFTER MODULE");
 console.log(context.bind("val"));
 context.module("iterator", "@orionids/canis", true);
+
+context.module("compat.sh", "@orionids/Orion/mate/src", true);
