@@ -7,10 +7,12 @@
 // task timeout if initialization is done in lambda handler
 // when lambda in running on AWS server ( no problem in local ),
 // so do this here
+"use strict";
 var fs = require("fs");
 var path = require("path");
 var storage = require("canis/storage");
 var child_process = require("child_process");
+var List = require("canis/list");
 var aws;
 
 function awsContext(name, param)
@@ -106,7 +108,7 @@ module.exports.module = function(name, loc, lazy) {
 	if (loc.charAt(0) === "@") {
 		var i = loc.indexOf("/");
 		if (i > 0) {
-			account = loc.substring(0,i);
+			var account = loc.substring(0, i);
 			if (path.extname(loc).length <= 0)
 				loc += ".js";
 
@@ -161,3 +163,17 @@ module.exports.delay = function(prop,f,param)
 	}
 };
 
+module.exports.Runtime = class {
+	constructor(init, exec, ext, path, altered, arg, extra, symbol) {
+		this.init = init;
+		this.exec = exec;
+		this.ext = ext;
+		this.path = path;
+		this.altered = altered;
+		this.arg = arg;
+		this.extra = extra;
+		this.symbol = symbol;
+		this.active = new List(true);
+		this.idle = new List(true);
+	}
+}

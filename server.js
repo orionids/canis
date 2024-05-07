@@ -5,7 +5,7 @@
 
 "use strict";
 var fs = require("fs");
-var ws = require("ws");
+//var ws = require("ws");
 var path = require("path");
 var tls = require("tls");
 var string = require("canis/string");
@@ -463,10 +463,8 @@ context, api, basepath, request, response, param)//, matched)
 							}
 							switch (h) {
 								case "multipart":
-								str = str.toString
-									("base64");
-								ev.isBase64Encoded =
-									true;
+								str = str.toString("base64");
+								ev.isBase64Encoded = true;
 								break outer;
 							}
 							break;
@@ -712,7 +710,7 @@ exports.run = function(context,apiset,basepath,param) {
 
 //var w = ws.WebSocketServer;
 //var wss = new w({server});
-var wss = new ws.Server({server});
+/*var wss = new ws.Server({server});
 wss.on("connection", function(socket) {
 	console.log("WEBSOCKET!");
 	socket.on("message", function(data) {
@@ -722,7 +720,7 @@ wss.on("connection", function(socket) {
 		console.log("CLOSED");
 	});
 	socket.send("HELLO!!!");
-});
+});*/
 
 		if (client) {
 			server.client = {};

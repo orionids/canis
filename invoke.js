@@ -7,7 +7,7 @@
 var child_process;
 var net;
 var pathLib = require("path");
-var list = require("canis/list");
+var List = require("canis/list");
 var context = require("canis/context");
 var server = require("canis/server");
 var string = require("canis/string");
@@ -18,9 +18,10 @@ var gcRequested;
 var childMap = new Map();
 var packetContext;
 
-class MessageContext {
+class MessageContext extends List {
 	constructor(rtctx, callback) {
-		this.idle = undefined; // idle.child[.client], but idle can be null
+		super();
+		//this.idle = undefined; // idle.child[.client], but idle can be null
 		this.child = undefined;
 		this.rt = undefined;
 		this.rtctx = rtctx;
@@ -37,16 +38,17 @@ class MessageContext {
 	}
 }
 
-class PacketContext {
-	constructor(reuse, client) {
+class PacketContext extends List {
+	constructor(reuse, client, msgctx) {
+		super();
 		this.chunk = [];
 		this.size = undefined;
 		this.current = 0;
 		this.reuse = reuse;
 		this.normalExit = false;
-		this.msgctx = undefined;
 		this.client = client;
-		if (client) list.linkCircularNode(packetContext, this);
+		this.msgctx = msgctx;
+		if (client) this.linkCircular(packetContext, this);
 	}
 };
 
@@ -76,6 +78,10 @@ invokeLambda(msgctx, prefix, msg)
 	module.exports(context, name, JSON.parse(msg.ev), msg.root,
 		msg.forget? flag | module.exports.FORGET : flag,
 		function(err, data) {
+			// correctly updated msgctx.callback should be called when "result"
+			// event is raised, packet from subprocess should be transferred
+			// via this msgctx (closure of this callback) of remote client :
+			// subprocess -> lambda server -> client
 			msgctx.send(err? err : {
 				statusCode: msg.forget? 202 : 200,
 				action: "result",
@@ -204,20 +210,19 @@ execute(msgctx, exname, arg, socket, reuse, invoke, callback)
 	if (socket) {
 		socket(reuse, function() {
 			msgctx.child = executeLocal(
-				exname, arg, {stdio: ["pipe", "pipe", 2]});
+				exname, arg, {stdio: ["pipe", 1, "pipe"]});
 			childMap.set(msgctx.child.pid, msgctx);
 			msgctx.invoke = invoke; // XXX
 		}, callback);
 	} else {
 		var child = executeLocal(
-			exname, arg, {stdio: ["pipe", "pipe", 2]});
+			exname, arg, {stdio: ["pipe", 1, "pipe"]});
 		msgctx.child = child;
 		invoke(child.stdin);
-		var pktctx = new PacketContext(reuse);
-		pktctx.msgctx = msgctx;
-		child.stdout.on("data", function(d) {
+		var pktctx = new PacketContext(reuse, undefined, msgctx);
+		child.stderr.on("data", function(d) {
 			receiveMessage(pktctx, d, function (msg) {
-				dispatchMessage(null, pktctx, msg, callback);
+				dispatchMessage(null, pktctx, msg);
 			});
 		});
 	}
@@ -227,40 +232,17 @@ execute(msgctx, exname, arg, socket, reuse, invoke, callback)
 module.exports.getRuntime = function()
 {
 	return this.runtime === undefined ? (this.runtime = {
-		active: list.circularHead(),
-		idle: list.circularHead()
+		active: new List(true),
+		idle: new List(true)
 	}) : this.runtime;
 }
 
-if (false) {
-process.on("SIGTTOU", function() {
-	console.log("SIGTERM!!!!!!!!!!!!!");
-});
-child_process = require("child_process");
-execute("bash", ["-i"], false, function(child, output) {
-	var node = {
-		child: child,
-		quit: function() {
-			list.unlinkCircularNode(this);
-			output.write("exit\n");
-		}
-	};
-	list.linkCircularNode(
-		module.exports.getRuntime().active, node);
-	input.on("data", function(d) {
-		console.log(d.toString("UTF-8"));
-	});
-	child.on("close", function() {
-		list.unlinkCircularNode(node);
-	});
-});
-}
 
 module.exports.gc = function(code, callback)
 {
 	if (processServer) {
 		gcRequested = true;
-				processServer.close();
+		processServer.close(); // do this first so clear child processes
 		processServer.getConnections(function(err,count) {
 			if (processServer && (count <= 0 || code == "SIGTERM")) {
 				if (packetContext) {
@@ -270,7 +252,6 @@ module.exports.gc = function(code, callback)
 						pktctx.client.destroy();
 					}
 				}
-//				processServer.close();
 				processServer = undefined;
 			} else if (typeof(callback) === "function") {
 				callback(count);
@@ -335,7 +316,7 @@ if (commLog) console.log(">>>>> Exact payload received");
 }
 
 function
-dispatchMessage(client, pktctx, msg, callback)
+dispatchMessage(client, pktctx, msg)
 {
 	function sendResolved(r)
 	{
@@ -347,24 +328,19 @@ dispatchMessage(client, pktctx, msg, callback)
 	var msgctx = pktctx.msgctx; // redundant for pid
 	switch (msg.action) {
 		case "pid":
-		if (client) {
-			if (msgctx = childMap.get(msg.pid)) {
-				childMap.delete(msg.pid);
-				if (msgctx.invoke) msgctx.invoke(client);
-			} else {
-				msgctx = new MessageContext({}, callback);
-				msgctx.output = client;
-			}
+		if (client && (msgctx = childMap.get(msg.pid))) {
+			childMap.delete(msg.pid);
+			if (msgctx.invoke) msgctx.invoke(client);
 			pktctx.msgctx = msgctx;
 		}
 		break;
 		case "result":
-		callback(msg.err, msg.data);
+		msgctx.callback(msg.err, msg.data);
 		break;
 		case "reuse":
-		list.unlinkCircularNode(msgctx.idle);
+		msgctx.unlinkCircular();
 		if (pktctx.reuse) {
-			list.linkCircularNode(msgctx.rt.idle, msgctx.idle);
+			msgctx.linkCircular(msgctx.rt.idle);
 		} else {
 			msgctx.send({action: "exit"});
 			if (pktctx.client) {	
@@ -418,17 +394,19 @@ dispatchMessage(client, pktctx, msg, callback)
 
 module.exports.exit = function()
 {
+	var cnt = 0;
 	var runtime = context.get("fork").runtime;
 	for (var r in runtime) {
 		r = runtime[r];
-		var head = r.active;
+		var head = r.idle;
 		for (var i = 0; i < 2; i++ ) {
 			if (head)
-				for (var idle = head.next; idle != head; idle = idle.next)
-					idle.msgctx.send({action: "exit"});
-			head = r.idle;
+				for (var i = head.next; i != head; i = i.next, cnt++)
+					i.send({action: "exit"});
+			head = r.active;
 		}
 	}
+	return cnt;
 }
 
 module.exports.socket = function (reuse, done, callback, quit, port, report)
@@ -437,17 +415,20 @@ module.exports.socket = function (reuse, done, callback, quit, port, report)
 		done();
 	} else {
 		net = require("net");
-		packetContext = list.circularHead();
+		packetContext = new List(true);
+		var msgctx = new MessageContext({}, callback);
 		processServer = net.createServer(function(client) {
-			var pktctx = new PacketContext(reuse, client);
+			var msgctx = new MessageContext({}, callback);
+			var pktctx = new PacketContext(reuse, client, msgctx);
+			msgctx.output = client;
 			client.on("data", function(d) {
 				receiveMessage(pktctx, d, function(msg) {
-					dispatchMessage(client, pktctx, msg, callback);
+					dispatchMessage(client, pktctx, msg);
 				});
 			});
 			client.on("close", function(err) {
 				client.destroy();
-				list.unlinkCircularNode(pktctx);
+				pktctx.unlinkCircular();
 				if (!pktctx.normalExit) {
 					if (pktctx.msgctx && !pktctx.msgctx.child && gcRequested)
 						module.exports.gc();
@@ -469,17 +450,22 @@ module.exports.socket = function (reuse, done, callback, quit, port, report)
 			if (report) {
 				reporterServer = require("canis/reporter")(report.port,
 				function(cmd) {
-					if (cmd == "state") {
+					switch (cmd[0]) {
+						case "clear":
+						return "Broadcasted: " + module.exports.exit().toString();
+
+						case "state":
 						var s = "";
 						var runtime = context.get("fork").runtime;
 						for (var r in runtime) {
 							s += r + ":";
 							r = runtime[r];
-							s += " active=" + list.countCircular(
+							s += " active=" + r.active.countCircular(
 								r.active).toString() + ", idle=" +
-								list.countCircular(r.idle).toString();
+								r.idle.countCircular().toString();
 						}
 						return s;
+
 					}
 				}, report.manageClient);
 			}
@@ -499,11 +485,11 @@ module.exports.handler = function(
 	var rtpath;
 
 	function registerOnClose() {
-		msgctx.idle = {child: msgctx.child, msgctx: msgctx/*XXX*/};
+//		msgctx.idle = {child: msgctx.child, msgctx: msgctx/*XXX*/};
 		msgctx.child.on("close", function(code) {
 			if (process.exitCode == 0)
 				process.exitCode = code;
-			list.unlinkCircularNode(msgctx.idle);
+			msgctx.unlinkCircular();
 			if (msgctx.rt.active.next == msgctx.rt.active && gcRequested)
 				module.exports.gc();
 			// XXX callback with error
@@ -511,7 +497,7 @@ module.exports.handler = function(
 	}
 
 	function activate() { /* XXX this need not to be function*/
-		list.linkCircularNode(msgctx.rt.active, msgctx.idle);
+		msgctx.linkCircular(msgctx.rt.active);
 	}
 
 	function sendInvoke() {/* XXX this need not to be function*/
@@ -551,42 +537,41 @@ module.exports.handler = function(
 			throw (e);
 		}
 	} else {
-		var msgctx = new MessageContext(rtctx, callback);
 		var runtime = fork.runtime;
 		if (runtime === undefined)
 			runtime = fork.runtime = {};
-		msgctx.rt = runtime[rtname];
+
+		var rt = runtime[rtname];
+
 		for (;;) {
-			if (msgctx.rt === undefined)
+			/*if (msgctx.rt === undefined)
 				runtime[rtname] = msgctx.rt = {};
 			else if (msgctx.rt.idle)
-				break;
+				break;*/
+			if (rt === undefined) runtime[rtname] = rt = {};
+			else if (rt.idle) break;
 
-			msgctx.rt.idle = list.circularHead();
-			msgctx.rt.active = list.circularHead();
+			rt.idle = new List(true);
+			rt.active = new List(true);
 			break;
 		}
 
-		msgctx.idle = msgctx.rt.idle.next;
-		if (msgctx.idle !== msgctx.rt.idle) {
-			list.unlinkCircularNode(msgctx.idle);
-			msgctx = msgctx.idle.msgctx; //XXX
-			//msgctx.callback = callback;
+		var msgctx = rt.idle.next;
+		if (rt.idle !== msgctx) {
+			msgctx.unlinkCircular();
+			msgctx.callback = callback;
 			msgctx.rtctx = rtctx;
-////			msgctx.rt = rt;	
-//			msgctx.child = msgctx.idle.child;
-// XXX SEND MESSAGE TO RESEND PID!
-	//		msgctx.send({action: "reuse"});
 		} else {
-			if (child_process === undefined) {
+			msgctx = new MessageContext(rtctx, callback);
+			msgctx.rt = rt;
+			if (child_process === undefined)
 				child_process = require("child_process");
-			}
 
 			// XXX number of processes should be limited
 			if (rtname === "nodejs") {
 				msgctx.child = child_process.fork(__dirname + "/handler"); 
 				msgctx.child.on("message", function (msg) {
-					dispatchMessage(null, msgctx, msg, callback);
+					dispatchMessage(null, msgctx, msg);
 				});
 			} else {
 				var rtparam = {

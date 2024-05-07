@@ -45,11 +45,12 @@ So Canis is a part of Orion project and will support :
 		- S3 support
 	- object.js, string.js : some utility functions related to objects & strings
 
-## New features in 0.4.4 to 0.7.0
+## New features in 0.4.4 to 0.7.1
 
 - AWS related
 	- Sending HTML E-mail via SES
 	- Temporary credential using MFA
+	- AWS NodeJS SDK v3 support
 - Code execution
 	- Multi process support
 	- Python support

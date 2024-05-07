@@ -2,6 +2,14 @@
 # Copyright (C) 2020, adaptiveflow
 # Distributed under ISC License
 
+import logging
+old_format_exception = logging.Formatter.formatException
+def format_exception(self, ei):
+	e = old_format_exception(self, ei)
+	print("\033[33m" + e + "\033[0m")
+	return "listed"
+logging.Formatter.formatException = format_exception
+
 import traceback
 from importlib import import_module
 import sys
@@ -38,7 +46,7 @@ def resolve(body):
 	return io.recv()["body"]
 
 def initialize(cmd):
-	sys.stderr.new_line = None if cmd.get("remark") is False else True
+	sys.stdout.new_line = None if cmd.get("remark") is False else True
 	path = cmd.get("rtpath")
 	if path:
 		def _cvt(name):
@@ -85,19 +93,19 @@ def initialize(cmd):
 						_event.append(p)
 
 if __name__ == "__main__":
-	def log(p):
-		def wrap(*args,**kwargs):
-			if not "file" in kwargs:
-				kwargs["file"] = sys.stderr
-			return p(*args,**kwargs)
-		return wrap
+#	def log(p):
+#		def wrap(*args,**kwargs):
+#			if not "file" in kwargs:
+#				kwargs["file"] = sys.stderr
+#			return p(*args,**kwargs)
+#		return wrap
 
-	builtins.print = log(print)
+#	builtins.print = log(print)
 
-	old = sys.stderr
+	old = sys.stdout
 	if sys.platform == "win32":
 		from ctypes import windll, Structure, wintypes, byref
-		stderr_handle = windll.kernel32.GetStdHandle(-12)
+		stdout_handle = windll.kernel32.GetStdHandle(-11)
 		SetConsoleTextAttribute = windll.kernel32.SetConsoleTextAttribute
 		GetConsoleScreenBufferInfo = windll.kernel32.GetConsoleScreenBufferInfo
 		def get_default_color():
@@ -109,7 +117,7 @@ if __name__ == "__main__":
 					("srWindow", wintypes.SHORT * 4),
 					("dwMaximumWindowSize", wintypes.SHORT * 20)]
 			csbi = CONSOLE_SCREEN_BUFFER_INFO()
-			GetConsoleScreenBufferInfo(stderr_handle, byref(csbi))
+			GetConsoleScreenBufferInfo(stdout_handle, byref(csbi))
 			return csbi.wAttributes
 		default_color = get_default_color()
 		ansi_to_win32 = {
@@ -134,7 +142,7 @@ if __name__ == "__main__":
 					if start < i:
 						old_write(s[start:i])
 						old.flush()
-					SetConsoleTextAttribute(stderr_handle, code)
+					SetConsoleTextAttribute(stdout_handle, code)
 					start = i = j + 1
 				else:
 					i += 1
@@ -142,7 +150,7 @@ if __name__ == "__main__":
 			old.flush()
 		old.write = color_write
 	log_edit = []
-	class StdErr:
+	class StdOut:
 		def __init__(self):
 			self.new_line = True
 			self.lock = threading.Lock()
@@ -150,36 +158,18 @@ if __name__ == "__main__":
 		def flush(self):
 			pass
 
-		def write(self,s):
-			if s:
-				last = s[len(s) - 1]
-
-		#		for log in log_edit:
-		#			s = log_edit(s,last)
-				if s[0] == '{':
-					try:
-						payload = json.loads(s)
-						e = payload.get("exception")
-						if e:
-							print( "\033[33m" +  bytes(e, "utf-8").decode("unicode_escape") )
-							payload["exception"] = "listed"
-							s = json.dumps(payload)
-							if last == '\n':
-								s += last
-					except:
-						pass
-			else:
-				last = ''
+		def write(self, s):
 			self.lock.acquire();
 			if self.new_line:
-				old.write( _color("magenta") + str(os.getpid()) + _color("reset") + " " )
+				if not s.startswith(io.status_line):
+					old.write( _color("magenta") + str(os.getpid()) + _color("reset") + " " )
 				self.new_line = False
-			old.write( s )
-			if last == '\n' and self.new_line is not None:
+			old.write(s)
+			if s and s[len(s) - 1] == '\n' and self.new_line is not None:
 				self.new_line = True
 			self.lock.release();
 
-	sys.stdout = sys.stderr = StdErr()
+	sys.stdout = sys.stderr = StdOut()
 	port = os.environ.get("PYDEV_PORT")
 	if port is not None:
 		_pydevd = __import__("pydevd")
@@ -332,7 +322,7 @@ if __name__ == "__main__":
 				callback = import_module(name)
 			i += 1
 		sys.argv = sys.argv[i:]
-		io.connect(addr)
+		io.initialize(addr)
 	_initialize()
 
 	_notify("before_loop")
