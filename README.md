@@ -50,6 +50,7 @@ So Canis is a part of Orion project and will support :
 - AWS related
 	- Sending HTML E-mail via SES
 	- Temporary credential using MFA
+	- AWS NodeJS SDK v3 support
 - Code execution
 	- Multi process support
 	- Python support
