@@ -8,6 +8,7 @@ var base32Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 function
 hotp(key, counter, digits, digest)
 {
+	if (!key) return null;
 	var n = 8 - key.length;
 	key = key.toUpperCase() + '='.repeat(
 		n - Math.floor(n / 8) * 8)
@@ -33,11 +34,12 @@ exports.totp = function(key, time_step, digits, digest)
 {
 	var sec = Date.now() / 1000
 	var counter = (sec / time_step) | 0;
-	return {
+	var code = hotp(key, counter, digits, digest)
+	return code? {
 		time: sec - counter * time_step,
 		step: time_step,
-		code: hotp(key, counter, digits, digest),
-	}
+		code: code
+	} : null;
 }
 
 exports.google = function(key)

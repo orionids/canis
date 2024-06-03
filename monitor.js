@@ -7,17 +7,14 @@
 var net = require("net");
 var readline = require("readline");
 
-process.on('uncaughtException', function (err,origin) {
-});
-
-module.exports = function(param) {
+module.exports = function(param, terminate) {
 	function quit() {
 		rl.close();
-		param.terminate(context);
-	}	
+		if (terminate) terminate(context);
+	}
 	var rl = readline.createInterface({
 		input: process.stdin,
-		output: process.stdout
+		output: param.output !== undefined? param.output : process.stdout
 	});
 
 	rl.on("SIGINT", function() {
@@ -44,10 +41,13 @@ module.exports = function(param) {
 		});
 	}
 
-    var context = param.initialize(control);
+    var context = param.parse(null, null, control);
 	var state;
 	interactive();
 };
+
+process.on('uncaughtException', function (err,origin) {
+});
 
 module.exports.Instance = class {
 	constructor(tag, addr, port) {

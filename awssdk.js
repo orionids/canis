@@ -42,6 +42,7 @@ exports.initialize = function(aws) {
 					update: function() {
 					}
 				},
+				Lambda: ["invoke"],
 				S3: ["listBuckets"],
 				STS: ["getSessionToken"],
 			}, {
