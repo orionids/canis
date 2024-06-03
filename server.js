@@ -543,7 +543,7 @@ if (xxx) result = xxx;
                         // consider running command as lambda, causing an exception
 					}
 					stat = result.statusCode;
-//if (stat === undefined) stat = 200;
+if (stat === undefined) stat = 200;
 //https://github.com/feross/is-buffer/blob/master/index.js
 					if (typeof result === 'object') {
 						result = JSON.stringify(result);

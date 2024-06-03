@@ -10,7 +10,7 @@ message( msg ) {
 		// if uncaughtException occurs in handler
 		// IPC will be confused so safely return
 		// message handler
-		setTimeout( function() {
+		process.nextTick( function() {
 			require( msg.src ).handler( msg.ev, msg.ctx,
 			function( err, data ) {
 				process.send( { action: "result",

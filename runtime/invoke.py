@@ -18,8 +18,15 @@ import json
 import threading
 import builtins
 from canis.runtime import io
+
 _pydevd = None
 _event = []
+
+orig_exit = sys.exit
+def _do_exit(code):
+	_exit()
+	raise Exception("Exit code: " + str(code))
+sys.exit = _do_exit
 
 def _cygtodos(path):
 	return path[10] + ':' + path[11:] if path.startswith(
@@ -46,7 +53,7 @@ def resolve(body):
 	return io.recv()["body"]
 
 def initialize(cmd):
-	sys.stdout.new_line = None if cmd.get("remark") is False else True
+	sys.stderr.new_line = None if cmd.get("remark") is False else True
 	path = cmd.get("rtpath")
 	if path:
 		def _cvt(name):
@@ -92,17 +99,111 @@ def initialize(cmd):
 					if p and callable(p):
 						_event.append(p)
 
+def _exit():
+	io.send({"action": "reuse"})
+
+
+def _invoke(cmd, action_thread):
+	_notify("before_lambda")
+	initialize(cmd)
+	path, name = _module_info(cmd["src"])
+	if path:
+		i = 0
+		while path.startswith("../", i):
+			i += 3
+
+		if i > 0:
+			relpath = path[:i]
+			if relpath not in sys.path:
+				sys.path.append(relpath)
+			path = path[i:]
+		l = import_module("." + name, path.replace("/", "."))
+	else:
+		sys.path.append(os.getcwd())
+		l = import_module(name)
+
+#---
+#			import unittest
+#			unittest.TextTestRunner().run(
+#			unittest.TestSuite([ unittest.TestLoader().loadTestsFromModule(
+#				l
+#			) ]))
+#			io.send({
+#				"action": "result",
+#				"err": None,
+#				"data": {}
+#			})
+#			mt = threading.currentThread()
+#			for t in threading.enumerate():
+#				if t != mt and t.daemon is not True:
+#					t.join()
+#			io.send({"action": "reuse"})
+#			continue
+	ctx = _Context()
+	ctx.__dict__ = cmd["ctx"]
+	handler = cmd.get("handler")
+	handler = getattr(l, handler if handler else "lambda_handler", None)
+	if handler:
+		err = None
+		try:
+			r = handler(cmd.get("ev", {}), ctx)
+		except Exception as e:
+			traceback.print_exc()
+			r = str(e)
+			try:
+				# because stringified object can
+				# use quot instead of double quot,
+				# try to parse json
+				r = json.loads(r)
+			except:
+				err = r
+		io.send({
+			"action": "result",
+			"err": err,
+			"data": r
+		})
+	else:
+		altered = cmd.get("altered")
+		if altered:
+			a = import_module(
+				altered["name"], altered.get("package"))
+			handler = altered.get("handler")
+			r = getattr(a, handler if handler else "handler")(l)
+			io.send({
+				"action": "result",
+				"err": None,
+				"data": r
+			})
+		else:
+			_exception(e)
+	_notify("after_lambda")
+
+	if _pydevd is None:
+		# wait all threads terminate, like sys.exit
+		# TODO not compatible to AWS lambda written in python
+		mt = threading.current_thread() if hasattr(threading, "current_thread") else threading.currentThread()
+		for t in threading.enumerate():
+			if t != mt and t != action_thread and t.daemon is not True:
+				t.join()
+	_exit()
+
 if __name__ == "__main__":
-#	def log(p):
-#		def wrap(*args,**kwargs):
-#			if not "file" in kwargs:
-#				kwargs["file"] = sys.stderr
-#			return p(*args,**kwargs)
-#		return wrap
 
-#	builtins.print = log(print)
+	_lambda_waiter = threading.Semaphore(0)
+	_lambda_cmd = None
 
-	old = sys.stdout
+	def log(p):
+		def wrap(*args,**kwargs):
+			if not "file" in kwargs:
+				kwargs["file"] = sys.stderr
+			return p(*args,**kwargs)
+		return wrap
+
+	# print uses stderr, because garbage like error message can be written
+	# into stderr it disturbs communication
+	builtins.print = log(print)
+
+	old = sys.stderr
 	if sys.platform == "win32":
 		from ctypes import windll, Structure, wintypes, byref
 		stdout_handle = windll.kernel32.GetStdHandle(-11)
@@ -150,7 +251,7 @@ if __name__ == "__main__":
 			old.flush()
 		old.write = color_write
 	log_edit = []
-	class StdOut:
+	class StdErr:
 		def __init__(self):
 			self.new_line = True
 			self.lock = threading.Lock()
@@ -169,106 +270,34 @@ if __name__ == "__main__":
 				self.new_line = True
 			self.lock.release();
 
-	sys.stdout = sys.stderr = StdOut()
+	sys.stdout = sys.stderr = StdErr()
 	port = os.environ.get("PYDEV_PORT")
 	if port is not None:
 		_pydevd = __import__("pydevd")
 		_pydevd.settrace("localhost", port=int(port), suspend=False)
 
 	def _action():
-		cmd = io.recv()
-		if cmd is None:
-			return None
-		action = cmd["action"]
-		if action == "invoke":
-			_notify("before_lambda")
-			initialize(cmd)
-			path, name = _module_info(cmd["src"])
-			if path:
-				i = 0
-				while path.startswith("../", i):
-					i += 3
-
-				if i > 0:
-					relpath = path[:i]
-					if relpath not in sys.path:
-						sys.path.append(relpath)
-					path = path[i:]
-				l = import_module("." + name, path.replace("/", "."))
-			else:
-				sys.path.append(os.getcwd())
-				l = import_module(name)
-
-#---
-#			import unittest
-#			unittest.TextTestRunner().run(
-#			unittest.TestSuite([ unittest.TestLoader().loadTestsFromModule(
-#				l
-#			) ]))
-#			io.send({
-#				"action": "result",
-#				"err": None,
-#				"data": {}
-#			})
-#			mt = threading.currentThread()
-#			for t in threading.enumerate():
-#				if t != mt and t.daemon is not True:
-#					t.join()
-#			io.send({"action": "reuse"})
-#			continue
-			ctx = _Context()
-			ctx.__dict__ = cmd["ctx"]
-			handler = cmd.get("handler")
-			handler = getattr(l, handler if handler else "lambda_handler", None)
-			if handler:
-				err = None
-				try:
-					r = handler(cmd.get("ev", {}), ctx)
-				except Exception as e:
-					traceback.print_exc()
-					r = str(e)
-					try:
-						# because stringified object can
-						# use quot instead of double quot,
-						# try to parse json
-						r = json.loads(r)
-					except:
-						err = r
-				io.send({
-					"action": "result",
-					"err": err,
-					"data": r
-				})
-			else:
-				altered = cmd.get("altered")
-				if altered:
-					a = import_module(
-						altered["name"], altered.get("package"))
-					handler = altered.get("handler")
-					io.send({
-						"action": "result",
-						"err": None,
-						"data": getattr(a, handler if handler else "handler")(l)
-					})
+		global _lambda_cmd
+		while cmd := io.recv():
+			action = cmd["action"]
+			if action == "invoke":
+				_lambda_cmd = cmd
+				_lambda_waiter.release()
+			elif action == "control":
+				if io.process_control:
+					io.process_control(cmd["payload"])
 				else:
-					_exception(e)
-			_notify("after_lambda")
-
-			if _pydevd is None:
-				# wait all threads terminate, like sys.exit
-				# TODO not compatible to AWS lambda written in python
-				mt = threading.current_thread() if hasattr(threading, "current_thread") else threading.currentThread()
-				for t in threading.enumerate():
-					if t != mt and t.daemon is not True:
-						t.join()
-			io.send({"action": "reuse"})
-		elif action == "exit":
-			if _pydevd:
-				_pydevd.stoptrace()
-			return None
-		elif action == "reuse":
-			print("REUSE!!!!!!!!!!!!!!!!")
-		return cmd
+					io.process_command.append(cmd["payload"])
+			elif action == "exit":
+				if _pydevd:
+					_pydevd.stoptrace()
+				_lambda_cmd = None
+				_lambda_waiter.release()
+				break
+			elif action == "reuse":
+				print("REUSE!!!!!!!!!!!!!!!!")
+			else:
+				io.RPC.result(cmd)
 
 	class _Context:
 		@classmethod
@@ -277,15 +306,6 @@ if __name__ == "__main__":
 			cls.function_version = "1.0.0"
 		def get_remaining_time_in_millis(self):
 			return 10000
-		@staticmethod
-		def command(param):
-			io.send({
-				"action": "command",
-				"body": param
-			})
-			while cmd := _action():
-				if cmd["action"] == "command":
-					return cmd["body"]
 
 	def _module_info(fn):
 		path, name = os.path.split( fn )
@@ -325,7 +345,19 @@ if __name__ == "__main__":
 		io.initialize(addr)
 	_initialize()
 
-	_notify("before_loop")
-	while _action():
-		pass
-	_notify("after_loop")
+	t = threading.Thread(target=_action)
+	t.start()
+#	_notify("before_loop")
+#	while _action():
+#		pass
+#	_notify("after_loop")
+
+	while True:
+		_lambda_waiter.acquire()
+		cmd = _lambda_cmd
+		print(cmd)
+		if cmd:
+			_invoke(cmd, t)
+		else:
+			t.join()
+			break

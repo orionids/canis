@@ -30,21 +30,21 @@ var reporter = reporter(10002, function(cmd) {
 
 monitor({
 	interrupt: true,
-	initialize: function(control) {
-		class instance extends monitor.Instance {
-			result(r) {
-				console.log(r);
-				control(false);
-			}
-		};
-		return {
-			instance: new instance(null, null, 10002),
-			client: new List(true)
-		}
-	},
 	parse: function(context, input, control) {
 		try {
 			switch (input) {
+				case null:
+					class instance extends monitor.Instance {
+						result(r) {
+							console.log(r);
+							control(false);
+						}
+					};
+					return {
+						instance: new instance(
+							null, null, 10002),
+						client: new List(true)
+					}
 				case "quit":
 					control();
 					break;
@@ -74,15 +74,14 @@ monitor({
 			console.log(e);
 		}
 	},
-	terminate: function(context) {
-		context.instance.close();
+}, function(context) {
+	context.instance.close();
 
-		for (var c = context.client.next; c != context.client; c = c.next)
-			c.socket.destroy();
+	for (var c = context.client.next; c != context.client; c = c.next)
+		c.socket.destroy();
 
-		reporter.close();
-		server.close();
+	reporter.close();
+	server.close();
 
-		console.log("Bye~");
-	}
+	console.log("Bye~");
 });

@@ -22,6 +22,7 @@ class MessageContext extends List {
 	constructor(rtctx, callback) {
 		super();
 		//this.idle = undefined; // idle.child[.client], but idle can be null
+		this.tag = undefined;
 		this.child = undefined;
 		this.rt = undefined;
 		this.rtctx = rtctx;
@@ -162,10 +163,12 @@ rtctx.aws_request_id = 'reqid'
 			} else if (data.StatusCode == 200) {
 				// to maintain consistency with calling local function,
 				// assume json formatted result
-				var payload = JSON.parse(data.Payload);
+				var payload = JSON.parse(
+					typeof(data.Payload) === "string"? data.Payload :
+					Buffer.from(data.Payload).toString("utf8")
+				);
 				if (data.FunctionError)
-					callback(null, JSON.parse(
-						payload.errorMessage));
+					callback(null, JSON.parse(payload.errorMessage));
 				else callback(null, payload);
 			} else {
 				callback(new Error('UnexpectedException'));
@@ -196,33 +199,28 @@ matchPath(filename, pathenv, plain) {
 
 
 function
-executeLocal(exname, arg, option)
-{
-	return child_process.spawn(
-		process.platform != "win32" ? exname :
-		matchPath(exname, pathEnv, false, pathLib),
-		arg, option);
-}
-
-function
 execute(msgctx, exname, arg, socket, reuse, invoke, callback)
 {
+	function run() {
+		var child;
+		childMap.set((child = child_process.spawn(
+			process.platform != "win32" ? exname :
+			matchPath(exname, pathEnv, false, pathLib),
+			arg, {
+				stdio: ["pipe", "pipe", 2]
+			})).pid, msgctx);
+		msgctx.invoke = invoke;
+		return msgctx.child = child;
+	}
+
 	if (socket) {
-		socket(reuse, function() {
-			msgctx.child = executeLocal(
-				exname, arg, {stdio: ["pipe", 1, "pipe"]});
-			childMap.set(msgctx.child.pid, msgctx);
-			msgctx.invoke = invoke; // XXX
-		}, callback);
+		socket(reuse, run, callback);
 	} else {
-		var child = executeLocal(
-			exname, arg, {stdio: ["pipe", 1, "pipe"]});
-		msgctx.child = child;
-		invoke(child.stdin);
+		var child = run();
 		var pktctx = new PacketContext(reuse, undefined, msgctx);
-		child.stderr.on("data", function(d) {
+		child.stdout.on("data", function(d) {
 			receiveMessage(pktctx, d, function (msg) {
-				dispatchMessage(null, pktctx, msg);
+				dispatchMessage(child.stdin, pktctx, msg);
 			});
 		});
 	}
@@ -328,17 +326,28 @@ dispatchMessage(client, pktctx, msg)
 	var msgctx = pktctx.msgctx; // redundant for pid
 	switch (msg.action) {
 		case "pid":
-		if (client && (msgctx = childMap.get(msg.pid))) {
+		if ((msgctx = childMap.get(msg.pid))) {
 			childMap.delete(msg.pid);
 			if (msgctx.invoke) msgctx.invoke(client);
 			pktctx.msgctx = msgctx;
 		}
 		break;
+		case "tag":
+		childMap.set(msgctx.tag = "@" +  msg.tag, msgctx);
+		break;
 		case "result":
 		msgctx.callback(msg.err, msg.data);
 		break;
 		case "reuse":
+		if (msgctx.tag) {
+			childMap.delete(msgctx.tag);
+			msgctx.tag = undefined;
+		}
 		msgctx.unlinkCircular();
+		if (msgctx.empty()) {
+			var e = context.get('event');
+			if (e) e('INVOCATION_IDLE');
+		}
 		if (pktctx.reuse) {
 			msgctx.linkCircular(msgctx.rt.idle);
 		} else {
@@ -364,12 +373,6 @@ dispatchMessage(client, pktctx, msg)
 			sendResolved(
 				object.clone(msg.body, rtctx));
 		}
-		break;
-		case "command":
-		msgctx.send({
-			action: "command",
-			body: "HELLO!!!"
-		});
 		break;
 		case "credential":
 		var aws = require("canis/context").aws();
@@ -497,10 +500,13 @@ module.exports.handler = function(
 	}
 
 	function activate() { /* XXX this need not to be function*/
-		msgctx.linkCircular(msgctx.rt.active);
+		msgctx.linkCircular(msgctx.rt.active.prev);
 	}
 
 	function sendInvoke() {/* XXX this need not to be function*/
+		// EPIPE occurrs if below packet is sent before reading stdin from
+		// child side, kind of timing issue so send invoke after receiving
+		// pid action both socket and stdio
 		msgctx.send({
 			action: "invoke",
 			src: src,
@@ -613,4 +619,37 @@ var sock;// = module.exports.socket;
 		activate();
 		sendInvoke();
 	}
+}
+
+
+module.exports.control = function(tag, payload, type)
+{
+	var msgctx;
+	var packet = {
+		action: "control",
+		payload: payload
+	};
+	if (type == 0) {
+		msgctx = childMap.get("@" +  tag);
+		if (msgctx) {
+			msgctx.send(packet);
+			return 1;
+		}
+	} else {
+		var runtime = context.get("fork").runtime;
+		if (runtime) {
+			if (runtime = runtime[tag]) {
+				msgctx = runtime.active.next;
+				var n = 0;
+				while (msgctx != runtime.active) {
+					msgctx.send(packet);
+					if (type == 1) return 1;
+					msgctx = msgctx.next;
+					n++;
+				}
+				return n;
+			}
+		}
+	}
+	return -1;
 }

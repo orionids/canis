@@ -31,4 +31,9 @@ module.exports = class {
 		for (var node = this.next; node != this; node = node.next) n++;
 		return n;
 	}
+
+	empty() {
+		var head = this.next;
+		return !head || head.next === head;
+	}
 };

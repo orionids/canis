@@ -37,46 +37,49 @@ githubUrl(account, path)
 	}
 }
 
-var defaultEntity = {
-	"@orionids" : githubUrl
-};
+function defaultEntity()
+{
+	var map = new Map();
+	map.set("@orionids", githubUrl);
+	return map;
+}
 
 module.exports = function()
 {
 	Object.assign(this, module.exports);
-	this._entity = defaultEntity;
+	this._entity = defaultEntity();
 };
 
 module.exports.modulePath = undefined;
 
-module.exports._entity = defaultEntity;
+module.exports._entity = defaultEntity();
 
 module.exports.aws = awsContext;
 
 module.exports.ddbcli = function() {
-	var ddbcli = this._entity._ddbcli;
+	var ddbcli = this._entity.get("_ddbcli");
 	if (!ddbcli) {
 		ddbcli = awsContext("DynamoDB").DocumentClient();
-		this._entity._ddbcli = ddbcli;
+		this._entity.set("_ddbcli", ddbcli);
 	}
 	return ddbcli;
 };
 
 module.exports.lambda = function() {
-	var lambda = this._entity._lambda;
+	var lambda = this._entity.get("_lambda");
 	if (!lambda) {
 		lambda = new awsContext("Lambda");
-		this._entity._lambda = lambda;
+		this._entity.set("_lambda", lambda);
 	}
 	return lambda;
 };
 
 module.exports.service = function(name,param)
 {
-	var service = this._entity[name];
+	var service = this._entity.get(name);
 	if (!service) {
 		service = awsContext(name, param);
-		this._entity[name] = service;
+		this._entity.set(name, service);
 	}
 	return service;
 }
@@ -92,9 +95,12 @@ module.exports.service = function(name,param)
 module.exports.module = function(name, loc, lazy) {
 	var entity = this._entity;
 	function r() {
-		var m = entity[name];
-		if (m !== undefined) return m;
-		return entity[name] = require(loc);
+		var m = entity.get(name);
+		if (m === undefined) {
+			m = require(loc);
+			entity.set(name, m);
+		}
+		return m;
 	}
 
 	if (loc == null) {
@@ -116,7 +122,7 @@ module.exports.module = function(name, loc, lazy) {
 			if (p === undefined) p = __dirname + "/module";
 			p += "/" + loc.substring(1);
 			if (!fs.existsSync(p)) {
-				var req = entity[account](
+				var req = entity.get(account)(
 					account.substring(1), loc.substring(i));
 				var result = child_process.spawnSync(
 					process.argv[0], [
@@ -132,23 +138,23 @@ module.exports.module = function(name, loc, lazy) {
 		}
 	}
 	if (lazy === undefined) return r();
-	if (lazy !== true) entity[lazy] = r;
+	if (lazy !== true) entity.set(lazy, r);
 };
 
 module.exports.bind = function(lazy)
 {
-	return this._entity[lazy]();
+	return this._entity.get(lazy)();
 };
 
 module.exports.set = function(name,value)
 {
-	if (value === undefined) delete this._entity[name];
-	else this._entity[name] = value;
+	if (value === undefined) this._entity.delete(name);
+	else this._entity.set(name, value);
 };
 
 module.exports.get = function(name)
 {
-	return this._entity[name];
+	return this._entity.get(name);
 };
 
 module.exports.delay = function(prop,f,param)
