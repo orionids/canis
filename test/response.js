@@ -25,7 +25,7 @@ exports.writeHead = function (s,h) {
 			h = "No header";
 		}
 
-		request.evaluate(context.testCase, s);
+		request.evaluate(context.get("tc"), s);
 		console.log( "----- RESPONSE(status " + s + ")-----", h);
 	}
 }
@@ -35,7 +35,7 @@ getvar(name)
 {
 	var value = process.env[name];
 	if (value === undefined) {
-		var tc = context.testCase;
+		var tc = context.get("tc");
 		if (tc) {
 			var resolved = tc.resolved;
 			if (resolved)
@@ -53,7 +53,7 @@ exports.write = function (result) {
 		var run = tc.run;
 		if (nextTC && run) {
 				// update TC
-				context.testCase = nextTC;
+				context.set("tc", nextTC);
 				// propagate executor and resolved symbols
 				nextTC.run = run;
 				nextTC.resolved = tc.resolved;
@@ -61,7 +61,7 @@ exports.write = function (result) {
 		}
 	}
 	var r;
-	var tc = context.testCase;
+	var tc = context.get("tc");
     var tcres = tc.result;
 	if (result) {
 		var resstr = result.toString();
@@ -97,7 +97,7 @@ exports.write = function (result) {
 			json = JSON.stringify(json, null, 3);
 			console.log(syntax.highlight(json));
 			if (exports.remark !== false)
-				console.log( request.evaluate(context.testCase, null, json)?
+				console.log( request.evaluate(context.get("tc"), null, json)?
 					"\x1b[92mPass\x1b[0m" : "\x1b[91mFail\x1b[0m");
 		} else {
 			console.log("Error in response")
