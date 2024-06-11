@@ -41,7 +41,7 @@ cloneTC(request, symbol, callback, loose)
 	var resolved = request.resolved;
 	request.next = undefined
 	clone(request, symbol, function(r,symbol) {
-		context.testCase = r;
+		context.set("tc", r);
 		if (next) {
 			if (r) r.next = next
 			request.next = next;

@@ -355,7 +355,6 @@ if __name__ == "__main__":
 	while True:
 		_lambda_waiter.acquire()
 		cmd = _lambda_cmd
-		print(cmd)
 		if cmd:
 			_invoke(cmd, t)
 		else:
