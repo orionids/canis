@@ -725,7 +725,6 @@ wss.on("connection", function(socket) {
 		if (client) {
 			server.client = {};
 			server.on("connection", function(socket) {
-console.log("New client", socket.remoteAddress);
 				string.unique(function(id) {
 					socket.id = id;
 					server.client[id] = socket;

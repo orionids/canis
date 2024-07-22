@@ -2,6 +2,22 @@
 # Copyright (C) 2020, adaptiveflow
 # Distributed under ISC License
 
+from http.client import HTTPConnection
+
+_http_send_orig = HTTPConnection.send
+_http_response_orig = HTTPConnection.getresponse
+def _http_send(self, packet):
+#	print(packet.decode('utf-8'), "<<")
+	return _http_send_orig(self, packet)
+
+def _http_response(self, *args, **kwargs):
+	response = _http_response_orig(self, *args, **kwargs)
+#	print("==", response, "==")
+	return response
+
+HTTPConnection.send = _http_send
+HTTPConnection.getresponse = _http_response
+
 import logging
 old_format_exception = logging.Formatter.formatException
 def format_exception(self, ei):
@@ -25,6 +41,8 @@ _event = []
 orig_exit = sys.exit
 def _do_exit(code):
 	_exit()
+	if 100 <= code <= 120 :
+		orig_exit(code)
 	raise Exception("Exit code: " + str(code))
 sys.exit = _do_exit
 

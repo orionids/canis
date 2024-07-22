@@ -195,18 +195,24 @@ exports.clone = function(o, r, base)
 					var resolved = typeof p === "string" && r?
 						string.resolve(p, r.symbol, r.ctx) : p
 					if (r.partial && !resolved) continue;
-					if ((newo[
-							resolved
-						] = clone(o[p], r, newo[resolved], resolved)) === undefined) {
+					var cloned = clone(o[p], r, newo[resolved], resolved);
+					if (cloned === undefined) {
 						if (r.partial) continue;
 						return undefined;
 					}
+					if (!r.kill || cloned !== r.kill)
+						newo[resolved] = cloned;
 				}
 			}
 		}
 		return newo;
 		case "string":
-		if (r) return string.resolve(o, r.symbol, r.ctx);
+		if (r) {
+			var resolved = string.resolve(o, r.symbol, r.ctx);
+			if (typeof resolved === "object")
+				return exports.clone(resolved, r, base);
+			return resolved;
+		}
 	}
 	return o;
 };
