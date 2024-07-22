@@ -6,6 +6,7 @@
 
 var child_process;
 var net;
+var syntax;
 var pathLib = require("path");
 var List = require("canis/list");
 var context = require("canis/context");
@@ -336,7 +337,11 @@ dispatchMessage(client, pktctx, msg)
 		childMap.set(msgctx.tag = "@" +  msg.tag, msgctx);
 		break;
 		case "result":
-		msgctx.callback(msg.err, msg.data);
+		try {
+			msgctx.callback(msg.err, msg.data);
+		} catch(e) {
+			console.log(e);
+		}
 		break;
 		case "reuse":
 		if (msgctx.tag) {
@@ -361,18 +366,20 @@ dispatchMessage(client, pktctx, msg)
 		case "invoke":
 		invokeLambda(msgctx, msgctx.rtctx.lambdaPrefix, msg);
 		break;
+		case "print":
+		if (syntax === undefined)
+			syntax = require("canis/syntax");
+		var json = JSON.parse(msg.body);
+		if (msg.attr)
+			json = object.attribute(json, msg.attr);
+		console.log(typeof json === "object"?
+			syntax.highlight(JSON.stringify(json, null, 3)) : json);
+		break;
 		case "resolve":
 		var rtctx = msgctx.rtctx;
 		var resolve = context.get("resolve")
-		if (resolve) {
-			resolve(
-				msg.body, rtctx.symbol,
-				sendResolved
-			);
-		} else {
-			sendResolved(
-				object.clone(msg.body, rtctx));
-		}
+		if (resolve) resolve(msg.body, rtctx.symbol, sendResolved);
+		else sendResolved(object.clone(msg.body, rtctx));
 		break;
 		case "credential":
 		var aws = require("canis/context").aws();
@@ -490,7 +497,7 @@ module.exports.handler = function(
 	function registerOnClose() {
 //		msgctx.idle = {child: msgctx.child, msgctx: msgctx/*XXX*/};
 		msgctx.child.on("close", function(code) {
-			if (process.exitCode == 0)
+			if (!process.exitCode) // undefined or 0
 				process.exitCode = code;
 			msgctx.unlinkCircular();
 			if (msgctx.rt.active.next == msgctx.rt.active && gcRequested)

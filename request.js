@@ -17,14 +17,15 @@ var syntax = require("canis/syntax");
 var path = require("path");
 
 function
-clone(request, symbol, callback, loose)
+clone(request, symbol, callback, kill, loose)
 {
 	var resolve = {
 		symbol : symbol === undefined ?
 			[process.env] : symbol,
 		ctx : {loose: loose == null? true : loose},
-		include: true
-	}
+		include: true,
+		kill: kill
+	};
 	var r = object.clone(request, resolve);
 	if (r) {
 		if (r.init) r.init(r, callback, resolve);
@@ -35,7 +36,7 @@ clone(request, symbol, callback, loose)
 }
 
 function
-cloneTC(request, symbol, callback, loose)
+cloneTC(request, symbol, callback, kill, loose)
 {
 	var next = request.next;
 	var resolved = request.resolved;
@@ -51,7 +52,7 @@ cloneTC(request, symbol, callback, loose)
 			request.resolved = resolved;
 		}
 		callback(r, symbol);
-	}, loose);
+	}, kill, loose);
 }
 
 if (context.get("resolve") === undefined)
@@ -101,13 +102,14 @@ invokeLambda(api, symbol, request, response, local)
 exports.https = function(
 	context, api, basepath, request, response, param)
 {
-	var httpreq, https, symbol;
+	var httpreq, https, symbol, kill;
 	if (param) {
 		httpreq = param.httpreq;
 		https = param.https;
 		symbol = param.symbol;
+		kill = param.kill;
 	}
-	cloneTC( request, symbol, function(r) {
+	cloneTC(request, symbol, function(r) {
 		if(r) {
 			var apiInfo = param.apiInfo ? param.apiInfo(r) : {};
 
@@ -132,7 +134,7 @@ exports.https = function(
 				} );
 			}
 		}
-	}, true);
+	}, kill, true);
 //XXX exception
 };
 
@@ -149,18 +151,23 @@ exports.http = function
 exports.show = function
 (context, api, basepath, request, response, param) {
 	var symbol;
+	var kill;
 	if (param) {
 		if (param.arg != "raw") symbol = param.symbol;
+		kill = param.kill;
 	}
 	cloneTC(request, symbol, function (r, name) {
 		console.log(syntax.highlight(JSON.stringify(r, null, 3)));
-	});
+	}, kill);
 }
 
 exports.local = function
 (context, api, basepath, request, response, param) {
-	var symbol;
-	if (param) symbol = param.symbol;
+	var symbol, kill;
+	if (param) {
+		symbol = param.symbol;
+		kill = param.kill;
+	}
 	cloneTC(request, symbol, function (r, name) {
 		if (r) {
 			if (r.method == "INVOKE") {
@@ -183,7 +190,7 @@ exports.local = function
 console.log("Symbol not found!!!!!!!!!!1", name)
 response.end();
 		}
-	}, false);
+	}, kill, false);
 };
 
 function
@@ -418,11 +425,14 @@ upperFirst(s)
 
 exports.postman = function
 	(context, api, basepath, request, response, param) {
-	var symbol;
-	if (param) symbol = param.symbol;
+	var symbol, kill;
+	if (param) {
+		symbol = param.symbol;
+		kill = param.kill;
+	}
 	cloneTC( request, symbol, function(r) {
 		postman_generate(context,r,param);
-	});
+	}, kill);
 }
 
 
@@ -606,8 +616,7 @@ exports.iterate = function( context, target, symbol,
 		if (i < symbol.length) {
 			e.symbol[0] = symbol[i++];
 			elapsed = Date.now();
-			callee[target]( context, api, basepath,
-				request, r, e );
+			callee[target]( context, api, basepath, request, r, e );
 		} else {
 			require("canis/invoke").gc();
 		}
@@ -619,19 +628,19 @@ exports.iterate = function( context, target, symbol,
 
 	var s = e.symbol;
 	if (s === undefined) {
-		e.symbol = [ null, process.env ];
+		e.symbol = [null, process.env];
 	} else if (Array.isArray(s)) { // assume array
-		e.symbol = [ null ];
+		e.symbol = [null];
 		for (i = 0; i < s.length; i ++) {
 			e.symbol.push(s[i]);
 		}
 		e.symbol.push(process.env);
 	} else { // assume object
-		e.symbol = [ null, s, process.env ];
+		e.symbol = [null, s, process.env];
 	}
 
 	i = 0;
-	if (!symbol || symbol.length <= 0) symbol = [ null ];
+	if (!symbol || symbol.length <= 0) symbol = [null];
 	perform();
 };
 

@@ -1,4 +1,3 @@
-
 // jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
@@ -17,39 +16,76 @@ if (String.prototype.padEnd === undefined)
             this + c.repeat(len - this.length);
     };
 
-exports.symbol = function (s, symbol, explicit)
+// explicit???
+exports.symbol = function (s, symbol, delim)
 {
 	function onDemandSymbol(sl, s) {
-        // BSD series trim key which contains equal sign
-        if (sl !== process.env || !s.includes("=")) {
-            var r = sl[s];
-            if (r) return r;
-        }
+		// BSD series trim key which contains equal sign
+		if (sl !== process.env || !s.includes("=")) {
+			var r = sl[s];
+			switch (typeof r) {
+				case "string": case "object": return r;
+			}
+		}
 		r = sl['?'];
 		if (r instanceof Function) {
 			var ctx = sl['??'];
-			return r(ctx? ctx : sl, s, symbol, explicit);
+			return r(ctx? ctx : sl, s, symbol);
 		}
 		return undefined;
+	}
+
+	function resolvedSymbol(s) {
+		if (s && typeof s === "string") {
+			if (s.startsWith("json:")) return JSON.parse(s.slice(5));
+			if (prefix) s = prefix + s;
+			if (suffix) s = s + suffix;
+		}
+		return s;
+	}
+
+	var value, l = -1;
+	while ((l = s.indexOf(delim.value, l + 1)) > 0) {
+		if (s.charAt(l - 1) != delim.escape) {
+			value = s.substring(l + 1);
+			s = s.substring(0, l);
+			break;
+		}
+	}
+
+	l = s.search(/[A-Za-z0-9_]/);
+	var prefix, suffix;
+	if (l > 0) {
+		prefix = s.substring(0, l);
+		s = s.slice(l);
+	}
+
+	l = s.search(/[^A-Za-z0-9_]/);
+	if (l > 0) {
+		suffix = s.substring(l);
+		s = s.slice(0, l);
 	}
 
 	var resolved;
 	if (Array.isArray(symbol)) {
-		for (var l = 0; l < symbol.length; l++) {
+		for (l = 0; l < symbol.length; l++) {
 			var sl = symbol[l];
 			if (sl) {
 				resolved = onDemandSymbol(sl, s);
 				// exclude both null and undefined
-				if (resolved != null) return resolved;
+				if (resolved != null) return resolvedSymbol(resolved);
 			}
 		}
-		return undefined;
+	} else if (symbol) {
+		resolved = onDemandSymbol(symbol, s);
+	} else {
+		resolved = process.env[s];
 	}
-	if (symbol) return onDemandSymbol(symbol, s);
-	return process.env[s];
+	return resolvedSymbol(resolved == null? value : resolved);
 };
 
-exports.resolve = function(s, symbol, ctx) {
+exports.resolve = function(s, symbol, ctx)
+{
 	var i;
 	var delim;
 	function replace(resolved, end) {
@@ -66,7 +102,7 @@ exports.resolve = function(s, symbol, ctx) {
 			i = 0;
 		}
 		ctx.delim = delim = {
-			open: "[", close: "]", escape: "\\",
+			open: "[", close: "]", escape: "\\", value: ":"
 		};
 		break;
 	}
@@ -97,11 +133,10 @@ exports.resolve = function(s, symbol, ctx) {
 				prev = prev + delim.close.length;
 			}
 			var sym = s.substring(next, end);
-			var resolved = exports.symbol(sym, symbol);
+			var resolved = exports.symbol(sym, symbol, delim);
 			if (resolved === undefined) {
-				if (ctx.loose) {
-					replace(
-                        delim.open + sym + delim.close, end);
+				if (ctx.loose || !isNaN(sym)) {
+					replace(delim.open + sym + delim.close, end);
 					i = end + 1;
 				} else if (ctx.loose === null) {
 					replace('', end);
@@ -114,6 +149,8 @@ exports.resolve = function(s, symbol, ctx) {
 					return undefined;
 				}
 			} else {
+				if (typeof resolved === "object")
+					return resolved;
 				replace(resolved, end);
 			}
 		}
