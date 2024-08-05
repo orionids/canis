@@ -33,7 +33,13 @@ callAWSAPI( iter, instance, name, param, callback ) {
 		timeout : timeout
 	};
 	setTimeout( function() {
-		instance[name]( param, callback );
+		if (true) {
+			instance[name]( param, callback );
+		} else {
+			// to simulate generation.. TODO
+			console.log("\x1b[95m", name, param, "\x1b[0m");
+			callback(null, {items: [{name: "api"}]});
+		}
 	}, timeout );
 }
 
