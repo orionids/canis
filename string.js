@@ -45,8 +45,8 @@ exports.symbol = function (s, symbol, delim)
 	}
 
 	var value, l = -1;
-	while ((l = s.indexOf(delim.value, l + 1)) > 0) {
-		if (s.charAt(l - 1) != delim.escape) {
+	while ((l = s.indexOf(delim.value, l + 1)) >= 0) {
+		if (l === 0 || s.charAt(l - 1) != delim.escape) {
 			value = s.substring(l + 1);
 			s = s.substring(0, l);
 			break;
