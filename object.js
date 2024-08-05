@@ -103,7 +103,7 @@ exports.clone = function(o, r, base)
 		while (li < len) {
 			var p = l[li];
 			if (typeof(p) === 'string') {
-				p = string.resolve(p, r.symbol, r.ctx);
+				p = resolveString(p, r.symbol, r.ctx);
 				if (p === undefined) return undefined;
 				try {
 					p = incload(p);
@@ -117,8 +117,14 @@ exports.clone = function(o, r, base)
 		}
 		return true;
 	}
+
 	if (o === null) return null;
 	if (r === undefined) r = {};
+
+	var resolveString = r.resolve === false? function(s) {
+		return s;
+	} : string.resolve;
+
 	var incload;
 	var inc = r.include;
 	if (inc) {
@@ -176,14 +182,24 @@ exports.clone = function(o, r, base)
 		return newa;
 	} else switch (typeof o) {
 		case "object":
-		if (o["[[AUGMENT]]"] && o.hasOwnProperty("[[VALUE]]")) {
+		if (r.augment && o.hasOwnProperty("[[VALUE]]")) {
 			var value = o["[[VALUE]]"];
-			return value? clone(value, r) : value;
+			if (value) value = clone(value, r);
+			if (typeof r.augment === "function")
+				r.augment(o["[[AUGMENT]]"], value);
+			return value;
 		}
 
 		var newo = base? base : {};
 		for (var p in o) {
-			if (p !== "[[AUGMENT]]" && o.hasOwnProperty(p)) {
+			if (p === "[[AUGMENT]]" || p === "[[VALUE]]") {
+				if (r.augment) {
+					if (typeof r.augment === "function")
+						r.augment(o[p], o);
+				} else {
+					newo[p] = o[p];
+				}
+			} else if (o.hasOwnProperty(p)) {
 				var op = o[p];
 				if (op !== undefined) {
 					switch (include(newo, function(dst,src) {
@@ -198,7 +214,7 @@ exports.clone = function(o, r, base)
 					}
 					if (r.ctx) r.ctx.property = p;
 					var resolved = typeof p === "string" && r?
-						string.resolve(p, r.symbol, r.ctx) : p
+						resolveString(p, r.symbol, r.ctx) : p
 					if (r.partial && !resolved) continue;
 					var cloned = clone(o[p], r, newo[resolved], resolved);
 					if (cloned === undefined) {
@@ -213,7 +229,7 @@ exports.clone = function(o, r, base)
 		return newo;
 		case "string":
 		if (r) {
-			var resolved = string.resolve(o, r.symbol, r.ctx);
+			var resolved = resolveString(o, r.symbol, r.ctx);
 			if (typeof resolved === "object")
 				return exports.clone(resolved, r, base);
 			return resolved;

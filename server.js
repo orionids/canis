@@ -363,6 +363,7 @@ context, api, basepath, request, response, param)//, matched)
 
 	var baseLength;
 	if (ctx.prev) baseLength = ctx.prev + ctx.part.length;
+else baseLength = 0;
 	var qp = exports.queryParameter(apipath)
 	var queryParam = qp.param;
 	apipath = qp.api;
@@ -585,16 +586,14 @@ if (false && xxx) { // XXX more test is needed for exception case
 		if (a && (m = a[m == "HEAD"? "GET": m])) {
 			if (Array.isArray(m)) {
 				m = m[0];
+				var subapi;
 				var i = apipath.indexOf("/", baseLength + 1);
-				if (i < 0) {
+				if (subapi = i < 0? ((i = apipath.length), m[apipath]) :
+					m[apipath.substring(baseLength, i)]) {
+					m = subapi;
+					baseLength = i;
+				} else { 
 					m = m[""];
-				} else {
-					m = m[apipath.substring(baseLength, i)];
-					if (m === undefined) {
-						m = m[""];
-					} else {
-						baseLength = i;
-					}
 				}
 			}
 			if (m.path) {
