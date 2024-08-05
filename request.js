@@ -36,12 +36,14 @@ clone(request, symbol, callback, kill, loose)
 }
 
 function
-cloneTC(request, symbol, callback, kill, loose)
+cloneTC(request, symbol, param, callback, kill, loose)
 {
 	var next = request.next;
 	var resolved = request.resolved;
 	request.next = undefined
 	clone(request, symbol, function(r,symbol) {
+		if (r && param.initializer)
+			param.initializer(r, param);
 		context.set("tc", r);
 		if (next) {
 			if (r) r.next = next
@@ -109,7 +111,7 @@ exports.https = function(
 		symbol = param.symbol;
 		kill = param.kill;
 	}
-	cloneTC(request, symbol, function(r) {
+	cloneTC(request, symbol, param, function(r) {
 		if(r) {
 			var apiInfo = param.apiInfo ? param.apiInfo(r) : {};
 
@@ -156,7 +158,7 @@ exports.show = function
 		if (param.arg != "raw") symbol = param.symbol;
 		kill = param.kill;
 	}
-	cloneTC(request, symbol, function (r, name) {
+	cloneTC(request, symbol, param, function (r, name) {
 		console.log(syntax.highlight(JSON.stringify(r, null, 3)));
 	}, kill);
 }
@@ -168,7 +170,7 @@ exports.local = function
 		symbol = param.symbol;
 		kill = param.kill;
 	}
-	cloneTC(request, symbol, function (r, name) {
+	cloneTC(request, symbol, param, function (r, name) {
 		if (r) {
 			if (r.method == "INVOKE") {
 				context.fork = param.fork;
@@ -430,7 +432,7 @@ exports.postman = function
 		symbol = param.symbol;
 		kill = param.kill;
 	}
-	cloneTC( request, symbol, function(r) {
+	cloneTC( request, symbol, param, function(r) {
 		postman_generate(context,r,param);
 	}, kill);
 }

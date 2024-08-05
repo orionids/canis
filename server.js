@@ -92,7 +92,7 @@ function absence(response, method, config) {
 }
 
 function
-resource(context, m, method, stage, url, baseLength, response, config, param)
+resource(context, m, stage, url, baseLength, request, response, config, param)
 {
 	function result(fn, data, r) {
 		var text;
@@ -121,9 +121,12 @@ resource(context, m, method, stage, url, baseLength, response, config, param)
 		} else {
 			code = 200;
 		}
-		response.writeHead(
-			code === undefined? 200 : code, header);
-		if (method != "HEAD")
+
+		response.writeHead(code === undefined? 200 : code, corsHeader(
+			request.origin? request : {
+			origin: param.origin? param.origin : "*"
+		}, param, header));
+		if (request.method != "HEAD")
 			response.write(data);
 		response.end();
 	}
@@ -147,7 +150,7 @@ resource(context, m, method, stage, url, baseLength, response, config, param)
 	}
 
 	function notFound() {
-		absence(response, method, config);
+		absence(response, request.method, config);
 	}
 
 	var p = decodeURI(baseLength ? url.substring(baseLength) : url);
@@ -243,7 +246,7 @@ options(api, hdr, response, param)
 			m += "," + a;
 		}
 	}
-	response.writeHead(200, corsHeader(hdr,param,{
+	response.writeHead(200, corsHeader(hdr, param, {
 		"Access-Control-Allow-Methods" : m
 	}) );
 	response.end();
@@ -521,8 +524,7 @@ rtctx.symbol = param.symbol;
 				}
 				var configPath = m.basePath;
 				if (configPath === undefined) configPath = config.basePath;
-				// request.lambda is not a regular attr
-				// so no security issue to
+				// request.lambda is not a regular attr so no security issue to
 				// externally submit lambda path
 				invoke.handler(context, rtname, rtctx, {
 					src: request.lambda? request.lambda : lambda,
@@ -558,8 +560,7 @@ if (false && xxx) { // XXX more test is needed for exception case
 	response.end();
 } else {
 					response.writeHead(stat,
-						corsHeader(request.headers,
-							param, hdr? hdr : {
+						corsHeader(request.headers, param, hdr? hdr : {
 								'Content-Type' : type
 							}));
 					if (result)
@@ -597,8 +598,8 @@ if (false && xxx) { // XXX more test is needed for exception case
 				}
 			}
 			if (m.path) {
-				resource(context, m, request.method, stage, apipath,
-					baseLength, response, config, param);
+				resource(context, m, stage, apipath,
+					baseLength, request, response, config, param);
 				return;
 			}
 		}
@@ -627,11 +628,9 @@ exports.registerLambda = function(context, apiLambdaTable, basePath)
 exports.loadAPI = function(context, name, cwd)
 {
 	try {
-		var api = object.clone(
-					typeof(name) === "string" ?
-						object.load(
-							path.isAbsolute(name) || !cwd?
-							name : cwd + "/" + name) : name, process.env);
+		var api = object.clone(typeof(name) === "string" ? object.load(
+			path.isAbsolute(name) || !cwd? name : cwd + "/" + name) : name,
+			process.env);
 		var apiLambdaTable = api["^"];
 		var basePath;
 		var config = api.configuration;
@@ -640,8 +639,7 @@ exports.loadAPI = function(context, name, cwd)
 		return api;
 	} catch (e) {
 		if (e.code === "MODULE_NOT_FOUND") {
-			// so user supplied run function will have
-			// change to be run
+			// so user supplied run function will have chance to be run
 			return null;
 		} else {
 		//	require(file); // raise exception again to know datails

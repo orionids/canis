@@ -176,9 +176,14 @@ exports.clone = function(o, r, base)
 		return newa;
 	} else switch (typeof o) {
 		case "object":
+		if (o["[[AUGMENT]]"] && o.hasOwnProperty("[[VALUE]]")) {
+			var value = o["[[VALUE]]"];
+			return value? clone(value, r) : value;
+		}
+
 		var newo = base? base : {};
 		for (var p in o) {
-			if (o.hasOwnProperty(p)) {
+			if (p !== "[[AUGMENT]]" && o.hasOwnProperty(p)) {
 				var op = o[p];
 				if (op !== undefined) {
 					switch (include(newo, function(dst,src) {
