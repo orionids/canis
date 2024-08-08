@@ -282,6 +282,10 @@ function
 invokeAPI(
 context, api, basepath, request, response, param)//, matched)
 {
+	function unknownAPI() {
+		throw new Error("UNKNOWN_API: " + request.method + " " + request.url);
+	}
+
 	function addPathParameter(name, all) {
 		var s;
 		var base;
@@ -580,31 +584,33 @@ if (false && xxx) { // XXX more test is needed for exception case
 		}
 		throw new Error(
 			"UNKNOWN_METHOD." + request.method);
-	} else {
-		a = api[""];
-		m = request.method;
-		if (a && (m = a[m == "HEAD"? "GET": m])) {
-			if (Array.isArray(m)) {
-				m = m[0];
-				var subapi;
-				var i = apipath.indexOf("/", baseLength + 1);
-				if (subapi = i < 0? ((i = apipath.length), m[apipath]) :
-					m[apipath.substring(baseLength, i)]) {
-					m = subapi;
-					baseLength = i;
-				} else { 
-					m = m[""];
+	}
+
+	a = api[""];
+	m = request.method;
+	if (a && (m = a[m == "HEAD"? "GET": m])) {
+		if (Array.isArray(m)) {
+			m = m[0];
+			var subapi;
+			var i = apipath.indexOf("/", baseLength + 1);
+			if (subapi = i < 0? ((i = apipath.length), m[apipath]) :
+				m[apipath.substring(baseLength, i)]) {
+				m = subapi;
+				baseLength = i;
+			} else { 
+				if ((m = m[""]) === undefined) {
+					unknownAPI();
+					return;
 				}
 			}
-			if (m.path) {
-				resource(context, m, stage, apipath,
-					baseLength, request, response, config, param);
-				return;
-			}
 		}
-		throw new Error("UNKNOWN_API: " +
-			request.method + " " + request.url);
+		if (m.path) {
+			resource(context, m, stage, apipath,
+				baseLength, request, response, config, param);
+			return;
+		}
 	}
+	unknownAPI();
 }
 exports.match = match;
 exports.invoke = invokeAPI;
