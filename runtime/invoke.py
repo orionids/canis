@@ -68,7 +68,7 @@ def resolve(body):
 		"action": "resolve",
 		"body": body
 	})
-	return io.recv()["body"]
+	return io.RPC.wait()["body"]
 
 def initialize(cmd):
 	sys.stderr.new_line = None if cmd.get("remark") is False else True
