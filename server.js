@@ -279,8 +279,7 @@ exports.invocationPath = function(basePath, configPath)
 }
 
 function
-invokeAPI(
-context, api, basepath, request, response, param)//, matched)
+invokeAPI(context, api, basepath, request, response, param)
 {
 	function unknownAPI() {
 		throw new Error("UNKNOWN_API: " + request.method + " " + request.url);
@@ -657,9 +656,7 @@ console.log(e); // resolve this XXX not to use console.log : above doesn't work 
 exports.run = function(context,apiset,basepath,param) {
 	function dispatch(request, response) {
 		try {
-			invokeAPI(
-				context, apiset, basepath,
-				request, response, param);
+			invokeAPI(context, apiset, basepath, request, response, param);
 		} catch (e) {
 			console.log(e, e.stack);
 		}

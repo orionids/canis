@@ -15,6 +15,7 @@ var server = require("canis/server");
 var iterator = require("canis/iterator");
 var syntax = require("canis/syntax");
 var path = require("path");
+var mime = require("canis/mime");
 
 function
 clone(request, symbol, callback, kill, loose)
@@ -598,27 +599,18 @@ exports.callee = function (name ) {
 
 // iterate run a request applying varios inputs specified by 'symbol'
 exports.iterate = function( context, target, symbol,
-	callback, api, basepath, request, response, param )
+	callback, api, basepath, request, param )
 {
 	var i;
 	var elapsed;
-	var r = {
-		writeHead: response.writeHead,
-		write : response.write,
-		end : function () {
-			response.end();
-			perform();
-		},
-		remark: response.remark
-	};
-
 	function perform() {
-		callback(i, symbol.length, elapsed === undefined?
-			undefined : Date.now() - elapsed);
+		var response = callback(
+			i, symbol.length,
+			elapsed === undefined? undefined : Date.now() - elapsed, perform);
 		if (i < symbol.length) {
 			e.symbol[0] = symbol[i++];
 			elapsed = Date.now();
-			callee[target]( context, api, basepath, request, r, e );
+			callee[target]( context, api, basepath, request, response, e );
 		} else {
 			require("canis/invoke").gc();
 		}
@@ -785,6 +777,7 @@ try {
 
 exports.evaluate = function(tc, code, response)
 {
+	if (!tc) return true;
 	var success = tc.success;
 	if (!success) return false;
 	if (typeof success === 'string')
@@ -806,4 +799,130 @@ exports.evaluate = function(tc, code, response)
 	return error? false : true;
 }
 
+function
+getvar(name)
+{
+	var value = process.env[name];
+	if (value === undefined) {
+		var tc = context.get("tc");
+		if (tc) {
+			var resolved = tc.resolved;
+			if (resolved)
+				return resolved[name];
+		}
+	}
+	return value;
+}
+
+exports.Response = class {
+	constructor(perform, remark) {
+		this.text = null;
+		this.headers = null;
+		this.contentType = null;
+		this.perform = null;
+		this.remark = remark === undefined? true : remark;
+	}
+
+	writeHead(s, h) {
+		this.headers = h;
+		if (this.remark !== false) {
+			if (h) {
+				this.contentType = h['Content-Type'];
+				h = syntax.highlight(JSON.stringify(h,null,3));
+			} else {
+				h = "No header";
+			}
+
+			exports.evaluate(context.get("tc"), s);
+			console.log( "----- RESPONSE(status " + s + ")-----", h);
+		}
+	}
+
+	write(result) {
+		function next() {
+			var nextTC = tc.next;
+			var run = tc.run;
+			if (nextTC && run) {
+					// update TC
+					context.set("tc", nextTC);
+					// propagate executor and resolved symbols
+					nextTC.run = run;
+					nextTC.resolved = tc.resolved;
+					run(nextTC);
+			}
+		}
+		var r;
+		var tc = context.get("tc");
+		var tcres = tc.result;
+		if (result) {
+			var resstr = this.text = result.toString();
+			switch (resstr.charAt(resstr.search(/\S|$/))) {
+				case '{':
+				case '[':
+				try {
+					r = JSON.parse(resstr);
+					break;
+				} catch(e) {
+				}
+				default:
+				r = result;
+			}
+			// tc.response function can edit response
+			var json = tc && tc.response? tc.response(r) : r;
+			if (json) {
+				for (var e in mime.extension) {
+					var type = mime.extension[e];
+					var text;
+					if (typeof type === "object") {
+						type = type.type;
+						text = type.text;
+					} else {
+						text = false;
+					}
+					if (this.contentType && this.contentType.includes(type)) {
+						if (type.startsWith("text/") || text)
+							json = json.toString();
+						break;
+					}
+				}
+				json = JSON.stringify(json, null, 3);
+				console.log(syntax.highlight(json));
+				if (exports.remark !== false)
+					console.log(exports.evaluate(context.get("tc"), null, json)?
+						"\x1b[92mPass\x1b[0m" : "\x1b[91mFail\x1b[0m");
+			} else {
+				console.log("Error in response")
+			}
+		} else {
+			r = {};
+		}
+		if (tc !== undefined) {
+			var s = tc.symbol;
+			if (s) {
+				var resolved = tc.resolved;
+				if (resolved === undefined)
+					resolved = tc.resolved = {};
+					for (var a in s) {
+						try {
+							resolved[a] = object.attribute(r, s[a]);
+						} catch (e) {
+						}
+					}
+			}
+			if (tcres) {
+				tc.getvar = getvar;
+				tcres( {headers:headers, body:r}, function(r) {
+					console.log(tc.method, tc.url, ": " + (r? "success" : "FAIL"));
+					next();
+				});
+			} else {
+				next();
+			}
+		}
+	}
+
+	end() {
+		if (this.perform) this.perform();
+	}
+};
 // EOF

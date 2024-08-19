@@ -74,22 +74,31 @@ exports.conditional = function(o, a, i)
 // object -> array : an item
 // array -> array : insert
 
-exports.clone = function(o, r, base)
+exports.clone = function(o, r, base, halt)
 {
-	function clone(o, r, base, attr) {
+	function clone(o, r, base, attr, halt) {
 		var result;
-		if (attr && r.push) {
-			result = r.push(attr, o);
-			if (result !== undefined) return result;
+		if (attr) {
+			if (r.augment && o.hasOwnProperty("[[VALUE]]")) {
+				var value = o["[[VALUE]]"];
+				if (typeof r.augment === "function")
+					r.augment(attr, clone(o["[[AUGMENT]]"], r), value, o);
+				o = value;
+			}
+			if (r.push) {
+				result = r.push(attr, o);
+				if (result !== undefined) return result;
+			}
 		}
 		result = r.recursive === false ?
-			o : exports.clone(o, r, base);
+			o : exports.clone(o, r, base, halt);
 		if (attr && r.pop)
-			r.pop(attr);
+			r.pop(attr, result);
 		return result;
 	}
 
-	function include(o, perform, k, l, li) {
+	function include(o, perform, k, l, li, augmented) {
+		var halt;
 		if (Array.isArray(k))
 			k = k[0];
 		if (k !== inc) return false;
@@ -99,6 +108,7 @@ exports.clone = function(o, r, base)
 		} else {
 			l = [l];
 			len = 1;
+			if (augmented) halt = true;
 		}
 		while (li < len) {
 			var p = l[li];
@@ -111,7 +121,7 @@ exports.clone = function(o, r, base)
 					return undefined;
 				}
 			}
-			p = clone(p, r);
+			p = clone(p, r, undefined, undefined, halt);
 			perform(o, p, li)
 			li++;
 		}
@@ -182,50 +192,49 @@ exports.clone = function(o, r, base)
 		return newa;
 	} else switch (typeof o) {
 		case "object":
-		if (r.augment && o.hasOwnProperty("[[VALUE]]")) {
+/*		if (r.augment && o.hasOwnProperty("[[VALUE]]")) {
 			var value = o["[[VALUE]]"];
 			if (value) value = clone(value, r);
 			if (typeof r.augment === "function")
-				r.augment(o["[[AUGMENT]]"], value);
+				r.augment(clone(o["[[AUGMENT]]"], r), value, o);
 			return value;
-		}
+		}*/
 
 		var newo = base? base : {};
-		for (var p in o) {
-			if (p === "[[AUGMENT]]" || p === "[[VALUE]]") {
-				if (r.augment) {
-					if (typeof r.augment === "function")
-						r.augment(o[p], o);
-				} else {
-					newo[p] = o[p];
+		var augmented;
+		if (!halt && r.augment && typeof r.augment === "function" &&
+			(!o["[[INCLUDE]]"] || o["[[AUGMENT]]"])) {
+			augmented = true;
+			r.augment(undefined, clone(o["[[AUGMENT]]"], r), newo);
+		}
+		for (var p in o) if (p !== "[[AUGMENT]]" && o.hasOwnProperty(p)) {
+			var op = o[p];
+			if (op !== undefined) {
+				switch (include(newo, function(dst,src) {
+					if (Array.isArray(src)) return false;
+					Object.assign(dst, src);
+					return true;
+				}, p, op, 0, augmented)) {
+					case undefined:
+					if (!r.partial) return undefined;
+					case true:
+					continue;
 				}
-			} else if (o.hasOwnProperty(p)) {
-				var op = o[p];
-				if (op !== undefined) {
-					switch (include(newo, function(dst,src) {
-						if (Array.isArray(src)) return false;
-						Object.assign(dst, src);
-						return true;
-					}, p, op, 0)) {
-						case undefined:
-						if (!r.partial) return undefined;
-						case true:
-						continue;
-					}
-					if (r.ctx) r.ctx.property = p;
-					var resolved = typeof p === "string" && r?
-						resolveString(p, r.symbol, r.ctx) : p
-					if (r.partial && !resolved) continue;
-					var cloned = clone(o[p], r, newo[resolved], resolved);
-					if (cloned === undefined) {
-						if (r.partial) continue;
-						return undefined;
-					}
-					if (!r.kill || cloned !== r.kill)
-						newo[resolved] = cloned;
+				if (r.ctx) r.ctx.property = p;
+				var resolved = typeof p === "string" && r?
+					resolveString(p, r.symbol, r.ctx) : p
+				if (r.partial && !resolved) continue;
+				var cloned = clone(o[p], r, newo[resolved], resolved);
+				if (cloned === undefined) {
+					if (r.partial) continue;
+					return undefined;
+				}
+				if (!r.kill || cloned !== r.kill) {
+					newo[resolved] = cloned;
 				}
 			}
 		}
+		
 		return newo;
 		case "string":
 		if (r) {
