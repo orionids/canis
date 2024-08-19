@@ -35,6 +35,14 @@ import threading
 import builtins
 from canis.runtime import io
 
+
+#import platform
+
+print(os.environ.get('CPUTYPE'), file=sys.stderr)
+#if platform.system() == "Darwin" and platform.processor() not in os.environ["CPUTYPE"]:
+#	print("\033[95mMaybe nodejs runtime is incompatible to your system:", plaform.processor())
+#	sys.exit(1)
+
 _pydevd = None
 _event = []
 
@@ -278,15 +286,16 @@ if __name__ == "__main__":
 			pass
 
 		def write(self, s):
-			self.lock.acquire();
-			if self.new_line:
-				if not s.startswith(io.status_line):
-					old.write( _color("magenta") + str(os.getpid()) + _color("reset") + " " )
-				self.new_line = False
-			old.write(s)
-			if s and s[len(s) - 1] == '\n' and self.new_line is not None:
-				self.new_line = True
-			self.lock.release();
+			if len(s) > 0:
+				self.lock.acquire();
+				if self.new_line:
+					if not s.startswith(io.status_line):
+						old.write( _color("magenta") + str(os.getpid()) + _color("reset") + " " )
+					self.new_line = False
+				old.write(s)
+				if s and s[len(s) - 1] == '\n' and self.new_line is not None:
+					self.new_line = True
+				self.lock.release();
 
 	sys.stdout = sys.stderr = StdErr()
 	port = os.environ.get("PYDEV_PORT")
