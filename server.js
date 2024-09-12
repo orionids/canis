@@ -154,8 +154,7 @@ resource(context, m, stage, url, baseLength, request, response, config, param)
 	}
 
 	var p = decodeURI(baseLength ? url.substring(baseLength) : url);
-	var filePath = m.path + (
-		stage? "/" + stage + "/" + p : p);
+	var filePath = m.path + (stage? "/" + stage + "/" + p : p);
 	var base = m.base;
 	if (base) base = process.env[base];
 	if (!base) base = m.basePath;
@@ -498,36 +497,40 @@ ev.params = pathParameters;
 ev.queries = queryParam;
 				}
 				ev.headers = hdr;
-				var fn = m.lambdaName;
-				if (!fn) {
-					fn = lambda.substring
-						(lambda.lastIndexOf("/") + 1);
-				}
-				var rtctx = {
-					functionName: fn,
-					lambdaPrefix: string.resolveCache(config, "lambdaPrefix"),
-					root: root? exports.invocationPath(basepath, root) : null,
-				};
-				Object.assign(rtctx, param.context);
 
-rtctx.log_group_name = "group";
-rtctx.aws_request_id = 'reqid'
-rtctx.symbol = param.symbol;
-				var rtname = m.runtime;
-				if (rtname === undefined) {
-					rtname = config.runtime;
+				var fn;
+				if (typeof lambda !== "function") {
+					fn = m.lambdaName;
+					if (!fn) {
+						fn = lambda.substring
+							(lambda.lastIndexOf("/") + 1);
+					}
+					var rtctx = {
+						functionName: fn,
+						lambdaPrefix: string.resolveCache(config, "lambdaPrefix"),
+						root: root? exports.invocationPath(basepath, root) : null,
+					};
+					Object.assign(rtctx, param.context);
+
+	rtctx.log_group_name = "group";
+	rtctx.aws_request_id = 'reqid'
+	rtctx.symbol = param.symbol;
+					var rtname = m.runtime;
 					if (rtname === undefined) {
-						switch (path.extname(lambda)) {
-							case ".py":
-							rtname = "python";
-							break;
-							default:
-							rtname = "nodejs";
+						rtname = config.runtime;
+						if (rtname === undefined) {
+							switch (path.extname(lambda)) {
+								case ".py":
+								rtname = "python";
+								break;
+								default:
+								rtname = "nodejs";
+							}
 						}
 					}
+					var configPath = m.basePath;
+					if (configPath === undefined) configPath = config.basePath;
 				}
-				var configPath = m.basePath;
-				if (configPath === undefined) configPath = config.basePath;
 				// request.lambda is not a regular attr so no security issue to
 				// externally submit lambda path
 				invoke.handler(context, rtname, rtctx, {
@@ -548,16 +551,16 @@ if (xxx) result = xxx;
                         //XXX if statusCode should be 200 here,
                         // consider running command as lambda, causing an exception
 					}
-					stat = result.statusCode;
-if (stat === undefined) stat = 200;
 //https://github.com/feross/is-buffer/blob/master/index.js
 					if (typeof result === 'object') {
+					stat = result.statusCode;
 						result = JSON.stringify(result);
 						type = 'application/json';
 					} else if (m.header === undefined ||
 						(type = m.header["Content-Type"]) === undefined) {
 						type = "text/plain";
 					}
+if (stat === undefined) stat = 200;
 if (false && xxx) { // XXX more test is needed for exception case
 //console.log(xxx,"!!!!!!!!!!!!!", stat);
 //process.exit(1)
@@ -567,6 +570,7 @@ if (false && xxx) { // XXX more test is needed for exception case
 						corsHeader(request.headers, param, hdr? hdr : {
 								'Content-Type' : type
 							}));
+					if (result === undefined) return response;
 					if (result)
 						response.write(result);
 					response.end();
@@ -725,6 +729,7 @@ wss.on("connection", function(socket) {
 		if (client) {
 			server.client = {};
 			server.on("connection", function(socket) {
+console.log("CON!");
 				string.unique(function(id) {
 					socket.id = id;
 					server.client[id] = socket;

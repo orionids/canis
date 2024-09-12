@@ -88,5 +88,5 @@
     "start": "node server.js",
     "test": "node test/run.js"
   },
-  "version": "0.7.9"
+  "version": "0.7.10"
 }
