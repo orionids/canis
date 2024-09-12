@@ -2,6 +2,7 @@
 // jshint curly:false
 // Copyright (C) 2017, adaptiveflow
 // Distributed under ISC License
+"use strict";
 
 module.exports = class {
 	constructor(circular) {

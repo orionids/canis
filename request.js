@@ -911,8 +911,12 @@ exports.Response = class {
 			}
 			if (tcres) {
 				tc.getvar = getvar;
-				tcres( {headers:headers, body:r}, function(r) {
-					console.log(tc.method, tc.url, ": " + (r? "success" : "FAIL"));
+				tcres({
+					headers: this.headers,
+					body: r
+				}, function(r) {
+					console.log(
+						tc.method, tc.url, ": " + (r? "success" : "FAIL"));
 					next();
 				});
 			} else {

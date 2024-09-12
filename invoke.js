@@ -543,9 +543,10 @@ module.exports.handler = function(
 	var ev = callee.param;
 	if (fork === undefined) {
 		try {
-			require(!path || pathLib.isAbsolute(src)? src : path + "/" + src)[
-				handlerName ? handlerName : "handler"]
-				(ev, rtctx, callback);
+			(typeof src === "function"? src : require(
+				!path || pathLib.isAbsolute(src)? src : path + "/" + src)[
+					handlerName ? handlerName : "handler"]
+			)(ev, rtctx, callback);
 		} catch (e) {
 			throw (e);
 		}
