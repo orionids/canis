@@ -277,6 +277,48 @@ exports.invocationPath = function(basePath, configPath)
 		configPath : basePath;
 }
 
+class ResponseParameter {
+	constructor(response, statusCode, header) {
+		this.response = response;
+		this.statusCode = statusCode;
+		this.header = header;
+	}
+}
+
+function
+sendResponse(rp, result) {
+	var response = rp.response;
+	response.writeHead(rp.statusCode, rp.header);
+	if (result === undefined) return response;
+	if (result) response.write(result);
+	response.end();
+}
+
+class LongPoll {
+	constructor(clientId) {
+		this.clientId = clientId;
+		this.rp = null;
+	}
+
+	setResponseParameter(response, statusCode, header) {
+		this.rp = new ResponseParameter(response, statusCode, header);
+	}
+};
+
+var longPoll = {
+};
+
+exports.send = function(serverId, p)
+{
+	console.log(serverId, p);
+	var lp = longPoll[serverId];
+	if (lp) {
+		sendResponse(lp.rp, p);
+	} else {
+		//XXX
+	}
+};
+
 function
 invokeAPI(context, api, basepath, request, response, param)
 {
@@ -479,6 +521,72 @@ else baseLength = 0;
 					str = str.toString();
 					break;
 				}
+
+				if (apipath === "/@socket") {
+					switch (request.method) {
+						case "POST":
+						try {
+							var body = JSON.parse(str);
+						} catch (e) {
+							console.log("invalid long poll request");
+							process.exit(1);
+						}
+						string.unique(function(id) {
+							longPoll[id] = new LongPoll(body.clientId);
+							sendResponse(new ResponseParameter(
+								response, 200, corsHeader(request.headers,
+								param, {
+									"Content-Type": "application/json"
+								})),
+								"{\"serverId\":\"" + id + "\"}");
+						});
+						return;
+						case "PUT":
+						var serverId = queryParam.serverId;
+						var lp = longPoll[queryParam.serverId];
+						if (lp && lp.clientId === queryParam.clientId) {
+							lpii = true;
+							var serverId = queryParam.serverId;
+							requestContext.routeKey = "$default";
+							requestContext.connectionId = serverId;
+							requestContext.eventType = "MESSAGE";
+						} else {
+// common XXX
+							sendResponse(new ResponseParameter(
+								response, 400, corsHeader(request.headers,
+								param, {
+									"Content-Type": "application/json"
+								})),
+								"{\"message\":\"Violation\"}");
+						}
+						break;
+						case "GET":
+						var serverId = queryParam.serverId;
+						var lp = longPoll[queryParam.serverId];
+						if (lp && lp.clientId === queryParam.clientId) {
+							var rp = lp.rp;
+							lp.setResponseParameter(response, 200, corsHeader(
+								request.headers, param, {
+								"Content-Type": "application/octet-stream"
+							}));
+							if (rp) return;
+							response = null;
+							lpii = true;
+							requestContext.routeKey = "$connect";
+							requestContext.connectionId = serverId;
+//sendResponse(lp.rp, "Hello from server");
+						} else {
+//XXX reject request
+							sendResponse(new ResponseParameter(
+								response, 400, corsHeader(request.headers,
+								param, {
+									"Content-Type": "application/json"
+								})),
+								"{\"message\":\"Violation\"}");
+							return;
+						}
+					}
+				}
 				if (lpi || lpii) {
 					ev.body = str;
 					ev.queryStringParameters = queryParam;
@@ -531,51 +639,51 @@ ev.queries = queryParam;
 					var configPath = m.basePath;
 					if (configPath === undefined) configPath = config.basePath;
 				}
-				// request.lambda is not a regular attr so no security issue to
-				// externally submit lambda path
-				invoke.handler(context, rtname, rtctx, {
-					src: request.lambda? request.lambda : lambda,
-					path: exports.invocationPath(basepath, configPath),
-					handler: m.handler,
-					param: ev
-				}, function(xxx,result) {
-					var type;
-					var stat;
-					var hdr;
-if (xxx) result = xxx;
-					if (lpi) {
-						hdr = result.headers;
-						result = result.body;
-						// XXX case when result has headers
-					} else {
-                        //XXX if statusCode should be 200 here,
-                        // consider running command as lambda, causing an exception
-					}
-//https://github.com/feross/is-buffer/blob/master/index.js
-					if (typeof result === 'object') {
-					stat = result.statusCode;
-						result = JSON.stringify(result);
-						type = 'application/json';
-					} else if (m.header === undefined ||
-						(type = m.header["Content-Type"]) === undefined) {
-						type = "text/plain";
-					}
-if (stat === undefined) stat = 200;
-if (false && xxx) { // XXX more test is needed for exception case
-//console.log(xxx,"!!!!!!!!!!!!!", stat);
-//process.exit(1)
-	response.end();
-} else {
-					response.writeHead(stat,
-						corsHeader(request.headers, param, hdr? hdr : {
-								'Content-Type' : type
-							}));
-					if (result === undefined) return response;
-					if (result)
-						response.write(result);
-					response.end();
-}
-				});
+					
+				{
+					invoke.handler(
+						context, rtname, rtctx, {
+							src: request.lambda? request.lambda : lambda,
+							path: exports.invocationPath(basepath, configPath),
+							handler: m.handler,
+							param: ev
+						}, function(xxx,result) {
+							var type;
+							var stat;
+							var hdr;
+					if (xxx) result = xxx;
+							if (lpi) {
+								hdr = result.headers;
+								result = result.body;
+								// XXX case when result has headers
+							} else {
+								//XXX if statusCode should be 200 here,
+								// consider running command as lambda, causing an exception
+							}
+					//https://github.com/feross/is-buffer/blob/master/index.js
+							if (typeof result === 'object') {
+								stat = result.statusCode;
+								result = JSON.stringify(result);
+								type = 'application/json';
+							} else {
+								type = m.header === undefined ||
+								(type = m.header["Content-Type"]) === undefined ?
+								"text/plain" : type;
+							}
+							if (false && xxx) { // XXX more test is needed for exception case
+								//console.log(xxx,"!!!!!!!!!!!!!", stat);
+								//process.exit(1)
+								if (response) response.end();
+							} else if (response) {
+								return sendResponse(new ResponseParameter(
+									response, stat === undefined? 200 : stat,
+									corsHeader(
+										request.headers, param, hdr? hdr : {
+											'Content-Type' : type
+										})), result);
+							}
+						});
+				}
 			});
 			request.on('error', function(e) {
 				console.log(e); // XXX do response here
@@ -657,27 +765,20 @@ console.log(e); // resolve this XXX not to use console.log : above doesn't work 
 	return undefined;
 }
 
-exports.run = function(context,apiset,basepath,param) {
+exports.run = function(context,apiset,basepath,param)
+{
+	var server;
 	function dispatch(request, response) {
 		try {
-			invokeAPI(context, apiset, basepath, request, response, param);
+			invokeAPI(context, apiset, basepath, request, response, param, server);
 		} catch (e) {
 			console.log(e, e.stack);
 		}
 	}
 
 	if (apiset) {
-		//const http = require("http");
-		var listener = dispatch;
-	/*
-	var express = require('express');
-	const app = express();
-	app.all('*', dispatch );
-	listener = app;
-	*/	// XXX testing now
 		var client;
 		do {
-			var server;
 			var port;
 			if (param) {
 				client = param.client;
@@ -702,8 +803,8 @@ exports.run = function(context,apiset,basepath,param) {
 							}
 						}
 					};
-					server = https.createServer
-						(options, dispatch ).listen( port ? port : 443);
+					server = https.createServer(
+						options, dispatch).listen( port ? port : 443);
 					break;
 				}
 			}
@@ -729,10 +830,11 @@ wss.on("connection", function(socket) {
 		if (client) {
 			server.client = {};
 			server.on("connection", function(socket) {
-console.log("CON!");
 				string.unique(function(id) {
-					socket.id = id;
-					server.client[id] = socket;
+					server.client[id] = {
+						socket: socket,
+						handlerParam: null
+					};
 					socket.on("close", function() {
 						delete server.client[id];
 					});
@@ -751,7 +853,7 @@ exports.close = function(server) {
 		var client = server.client;
 		for (var c in client) {
 			if (client.hasOwnProperty(c))
-				client[c].destroy();
+				client[c].socket.destroy();
 		}
 	}
 };
